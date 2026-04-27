@@ -1,0 +1,1 @@
+Første version af Grado til videofarver og eksport.

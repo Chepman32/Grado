@@ -1,0 +1,1 @@
+Prima versione di Grado per colore ed esportazione video.

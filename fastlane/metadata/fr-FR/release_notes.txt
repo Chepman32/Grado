@@ -1,0 +1,1 @@
+Première version de Grado pour étalonner et exporter des vidéos.
