@@ -81,6 +81,7 @@ final class GradoFilteredVideoView: UIView {
     }
   }
 
+  @objc var eventId: NSString = ""
   @objc var onLoad: RCTDirectEventBlock?
   @objc var onProgress: RCTDirectEventBlock?
   @objc var onEnd: RCTDirectEventBlock?
@@ -155,7 +156,7 @@ final class GradoFilteredVideoView: UIView {
       guard let self else { return }
       let seconds = currentTime.seconds
       guard seconds.isFinite else { return }
-      self.onProgress?(["currentTime": seconds])
+      self.emitProgress(seconds)
     }
   }
 
@@ -1554,7 +1555,7 @@ final class GradoFilteredVideoView: UIView {
       toleranceAfter: .zero
     ) { [weak self] _ in
       guard let self else { return }
-      self.onProgress?(["currentTime": seconds])
+      self.emitProgress(seconds)
       self.refreshCurrentFrameIfPaused()
     }
   }
@@ -1604,7 +1605,7 @@ final class GradoFilteredVideoView: UIView {
 
       let duration = observedItem.duration.seconds.isFinite ? observedItem.duration.seconds : 0
       DispatchQueue.main.async {
-        self.onLoad?(["duration": duration])
+        self.emitLoad(duration)
         if self.seekRequestId.intValue > 0 || self.seekToTime.doubleValue > 0 {
           self.seekIfNeeded()
         }
@@ -1648,8 +1649,8 @@ final class GradoFilteredVideoView: UIView {
     player.seek(to: .zero) { [weak self] _ in
       guard let self else { return }
       self.refreshCurrentFrameIfPaused()
-      self.onProgress?(["currentTime": 0])
-      self.onEnd?([:])
+      self.emitProgress(0)
+      self.emitEnd()
     }
   }
 
@@ -1673,6 +1674,35 @@ final class GradoFilteredVideoView: UIView {
     default:
       playerLayer.videoGravity = .resizeAspectFill
     }
+  }
+
+  private func emitLoad(_ duration: Double) {
+    GradoFilteredVideoViewEvents.emit(
+      name: GradoFilteredVideoViewEvents.loadEventName,
+      body: [
+        "eventId": eventId as String,
+        "duration": duration,
+      ]
+    )
+  }
+
+  private func emitProgress(_ currentTime: Double) {
+    GradoFilteredVideoViewEvents.emit(
+      name: GradoFilteredVideoViewEvents.progressEventName,
+      body: [
+        "eventId": eventId as String,
+        "currentTime": currentTime,
+      ]
+    )
+  }
+
+  private func emitEnd() {
+    GradoFilteredVideoViewEvents.emit(
+      name: GradoFilteredVideoViewEvents.endEventName,
+      body: [
+        "eventId": eventId as String,
+      ]
+    )
   }
 }
 
@@ -1914,5 +1944,47 @@ final class GradoFilteredVideoViewManager: RCTViewManager {
 
   override func view() -> UIView! {
     GradoFilteredVideoView()
+  }
+}
+
+@objc(GradoFilteredVideoViewEvents)
+final class GradoFilteredVideoViewEvents: RCTEventEmitter {
+  static let loadEventName = "GradoFilteredVideoViewLoad"
+  static let progressEventName = "GradoFilteredVideoViewProgress"
+  static let endEventName = "GradoFilteredVideoViewEnd"
+
+  private static weak var shared: GradoFilteredVideoViewEvents?
+  private var hasListeners = false
+
+  override init() {
+    super.init()
+    Self.shared = self
+  }
+
+  override static func requiresMainQueueSetup() -> Bool {
+    false
+  }
+
+  override func supportedEvents() -> [String]! {
+    [
+      Self.loadEventName,
+      Self.progressEventName,
+      Self.endEventName,
+    ]
+  }
+
+  override func startObserving() {
+    hasListeners = true
+  }
+
+  override func stopObserving() {
+    hasListeners = false
+  }
+
+  static func emit(name: String, body: [String: Any]) {
+    DispatchQueue.main.async {
+      guard let emitter = Self.shared, emitter.hasListeners else { return }
+      emitter.sendEvent(withName: name, body: body)
+    }
   }
 }

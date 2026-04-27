@@ -1,4 +1,5 @@
 #import <React/RCTComponent.h>
+#import <React/RCTEventEmitter.h>
 #import <React/RCTViewManager.h>
 
 @interface RCT_EXTERN_REMAP_MODULE(GradoFilteredVideoView, GradoFilteredVideoViewManager, RCTViewManager)
@@ -14,8 +15,12 @@ RCT_EXPORT_VIEW_PROPERTY(filterMatrixPayload, NSString)
 RCT_EXPORT_VIEW_PROPERTY(filterIntensity, NSNumber)
 RCT_EXPORT_VIEW_PROPERTY(seekToTime, NSNumber)
 RCT_EXPORT_VIEW_PROPERTY(seekRequestId, NSNumber)
+RCT_EXPORT_VIEW_PROPERTY(eventId, NSString)
 RCT_EXPORT_VIEW_PROPERTY(onLoad, RCTDirectEventBlock)
 RCT_EXPORT_VIEW_PROPERTY(onProgress, RCTDirectEventBlock)
 RCT_EXPORT_VIEW_PROPERTY(onEnd, RCTDirectEventBlock)
 
+@end
+
+@interface RCT_EXTERN_MODULE(GradoFilteredVideoViewEvents, RCTEventEmitter)
 @end

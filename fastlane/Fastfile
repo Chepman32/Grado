@@ -3,6 +3,8 @@ default_platform(:ios)
 platform :ios do
   desc "Upload Grado metadata to App Store Connect"
   lane :upload_metadata do
+    ensure_app_info_localizations
+
     api_key = app_store_connect_api_key(
       key_id: "STDG5D3U5A",
       issuer_id: "5c3aee75-98b2-489d-b18e-c273d41d1e02",
@@ -22,6 +24,65 @@ platform :ios do
       run_precheck_before_submit: false,
       ignore_language_directory_validation: true
     )
+  end
+
+  desc "Create or update Grado App Info localizations before metadata upload"
+  lane :ensure_app_info_localizations do
+    Spaceship::ConnectAPI.token = Spaceship::ConnectAPI::Token.create(
+      key_id: "STDG5D3U5A",
+      issuer_id: "5c3aee75-98b2-489d-b18e-c273d41d1e02",
+      filepath: File.expand_path("./AuthKey_STDG5D3U5A.p8")
+    )
+    app = Spaceship::ConnectAPI::App.find("com.grado.app")
+    edit = app.fetch_edit_app_info
+    UI.user_error!("No editable App Info") unless edit
+
+    existing = edit.get_app_info_localizations.each_with_object({}) do |localization, memo|
+      memo[localization.locale] = localization
+    end
+
+    Dir.glob(File.expand_path("./metadata/*", __dir__)).sort.each do |locale_dir|
+      next unless File.directory?(locale_dir)
+      locale = File.basename(locale_dir)
+      next if locale == "review_information"
+
+      name = File.read(File.join(locale_dir, "name.txt")).strip
+      subtitle = File.read(File.join(locale_dir, "subtitle.txt")).strip
+      privacy_url = File.read(File.join(locale_dir, "privacy_url.txt")).strip
+      attributes = {
+        locale: locale,
+        name: name,
+        subtitle: subtitle,
+        privacyPolicyUrl: privacy_url,
+        privacyChoicesUrl: privacy_url,
+        privacyPolicyText: "Privacy Policy: #{privacy_url}"
+      }
+
+      if existing[locale]
+        UI.message "Updating App Info #{locale}"
+        Spaceship::ConnectAPI.patch_app_info_localization(
+          app_info_localization_id: existing[locale].id,
+          attributes: attributes.reject { |key, _| key == :locale }
+        )
+      else
+        UI.message "Creating App Info #{locale}"
+        body = {
+          data: {
+            type: "appInfoLocalizations",
+            attributes: attributes,
+            relationships: {
+              appInfo: {
+                data: {
+                  type: "appInfos",
+                  id: edit.id
+                }
+              }
+            }
+          }
+        }
+        Spaceship::ConnectAPI.tunes_request_client.post("v1/appInfoLocalizations", body)
+      end
+    end
   end
 
   desc "Set privacyChoicesUrl = privacyPolicyUrl on every EDIT AppInfo localization"

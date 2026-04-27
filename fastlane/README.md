@@ -1,9 +1,72 @@
-# Grado Fastlane Metadata
+fastlane documentation
+----
 
-Generated App Store Connect metadata for Grado.
+# Installation
 
-Upload metadata:
+Make sure you have the latest version of the Xcode command line tools installed:
 
+```sh
+xcode-select --install
 ```
-fastlane ios upload_metadata
+
+For _fastlane_ installation instructions, see [Installing _fastlane_](https://docs.fastlane.tools/#installing-fastlane)
+
+# Available Actions
+
+## iOS
+
+### ios upload_metadata
+
+```sh
+[bundle exec] fastlane ios upload_metadata
 ```
+
+Upload Grado metadata to App Store Connect
+
+### ios ensure_app_info_localizations
+
+```sh
+[bundle exec] fastlane ios ensure_app_info_localizations
+```
+
+Create or update Grado App Info localizations before metadata upload
+
+### ios fix_privacy_choices
+
+```sh
+[bundle exec] fastlane ios fix_privacy_choices
+```
+
+Set privacyChoicesUrl = privacyPolicyUrl on every EDIT AppInfo localization
+
+### ios audit_app_info
+
+```sh
+[bundle exec] fastlane ios audit_app_info
+```
+
+Audit EDIT AppInfo localizations: print name/subtitle/privacy_* for each locale
+
+### ios fix_privacy_policy_text
+
+```sh
+[bundle exec] fastlane ios fix_privacy_policy_text
+```
+
+Set privacyPolicyText = privacyPolicyUrl on every EDIT AppInfo localization
+
+### ios upload_screenshots
+
+```sh
+[bundle exec] fastlane ios upload_screenshots
+```
+
+Upload Grado screenshots to App Store Connect
+
+----
+
+This README.md is auto-generated and will be re-generated every time [_fastlane_](https://fastlane.tools) is run.
+
+More information about _fastlane_ can be found on [fastlane.tools](https://fastlane.tools).
+
+The documentation of _fastlane_ can be found on [docs.fastlane.tools](https://docs.fastlane.tools).
