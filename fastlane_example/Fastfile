@@ -1,0 +1,126 @@
+default_platform(:ios)
+
+platform :ios do
+  desc "Upload Pluq metadata to App Store Connect"
+  lane :upload_metadata do
+    api_key = app_store_connect_api_key(
+      key_id: "STDG5D3U5A",
+      issuer_id: "5c3aee75-98b2-489d-b18e-c273d41d1e02",
+      key_filepath: "./fastlane/AuthKey_STDG5D3U5A.p8",
+      in_house: false
+    )
+
+    deliver(
+      api_key: api_key,
+      app_identifier: "com.pluq.app",
+      submit_for_review: false,
+      skip_screenshots: true,
+      skip_binary_upload: true,
+      skip_app_version_update: true,
+      force: true,
+      overwrite_screenshots: false,
+      run_precheck_before_submit: false,
+      ignore_language_directory_validation: true
+    )
+  end
+
+  desc "Set privacyChoicesUrl = privacyPolicyUrl on every EDIT AppInfo localization"
+  lane :fix_privacy_choices do
+    Spaceship::ConnectAPI.token = Spaceship::ConnectAPI::Token.create(
+      key_id: "STDG5D3U5A",
+      issuer_id: "5c3aee75-98b2-489d-b18e-c273d41d1e02",
+      filepath: File.expand_path("./AuthKey_STDG5D3U5A.p8")
+    )
+    app = Spaceship::ConnectAPI::App.find("com.pluq.app")
+    edit = app.fetch_edit_app_info
+    UI.user_error!("No editable App Info") unless edit
+    edit.get_app_info_localizations.each do |l|
+      next if l.privacy_policy_url.to_s.empty?
+      next if l.privacy_choices_url == l.privacy_policy_url
+      UI.message "Patching #{l.locale}: privacyChoicesUrl -> #{l.privacy_policy_url}"
+      Spaceship::ConnectAPI.patch_app_info_localization(
+        app_info_localization_id: l.id,
+        attributes: { privacyChoicesUrl: l.privacy_policy_url }
+      )
+    end
+    UI.success "Done patching privacyChoicesUrl for all localizations"
+  end
+
+  desc "Audit EDIT AppInfo localizations: print name/subtitle/privacy_* for each locale"
+  lane :audit_app_info do
+    Spaceship::ConnectAPI.token = Spaceship::ConnectAPI::Token.create(
+      key_id: "STDG5D3U5A",
+      issuer_id: "5c3aee75-98b2-489d-b18e-c273d41d1e02",
+      filepath: File.expand_path("./AuthKey_STDG5D3U5A.p8")
+    )
+    app = Spaceship::ConnectAPI::App.find("com.pluq.app")
+    edit = app.fetch_edit_app_info
+    UI.user_error!("No editable App Info") unless edit
+    missing = { name: [], subtitle: [], privacy_policy_url: [], privacy_choices_url: [], privacy_policy_text: [] }
+    edit.get_app_info_localizations.sort_by(&:locale).each do |l|
+      UI.message format(
+        "%-7s name=%s sub=%s ppUrl=%s pcUrl=%s ppText=%s",
+        l.locale,
+        l.name.to_s.empty? ? "∅" : "✓",
+        l.subtitle.to_s.empty? ? "∅" : "✓",
+        l.privacy_policy_url.to_s.empty? ? "∅" : "✓",
+        l.privacy_choices_url.to_s.empty? ? "∅" : "✓",
+        l.privacy_policy_text.to_s.empty? ? "∅" : "✓"
+      )
+      missing[:name] << l.locale if l.name.to_s.empty?
+      missing[:subtitle] << l.locale if l.subtitle.to_s.empty?
+      missing[:privacy_policy_url] << l.locale if l.privacy_policy_url.to_s.empty?
+      missing[:privacy_choices_url] << l.locale if l.privacy_choices_url.to_s.empty?
+      missing[:privacy_policy_text] << l.locale if l.privacy_policy_text.to_s.empty?
+    end
+    UI.important "Summary of missing fields:"
+    missing.each { |k, v| UI.message "  #{k}: #{v.empty? ? 'none' : v.join(', ')}" }
+  end
+
+  desc "Set privacyPolicyText = privacyPolicyUrl on every EDIT AppInfo localization (Apple TV)"
+  lane :fix_privacy_policy_text do
+    Spaceship::ConnectAPI.token = Spaceship::ConnectAPI::Token.create(
+      key_id: "STDG5D3U5A",
+      issuer_id: "5c3aee75-98b2-489d-b18e-c273d41d1e02",
+      filepath: File.expand_path("./AuthKey_STDG5D3U5A.p8")
+    )
+    app = Spaceship::ConnectAPI::App.find("com.pluq.app")
+    edit = app.fetch_edit_app_info
+    UI.user_error!("No editable App Info") unless edit
+    edit.get_app_info_localizations.each do |l|
+      next if l.privacy_policy_url.to_s.empty?
+      next unless l.privacy_policy_text.to_s.empty?
+      text = "Privacy Policy: #{l.privacy_policy_url}"
+      UI.message "Patching #{l.locale}: privacyPolicyText"
+      Spaceship::ConnectAPI.patch_app_info_localization(
+        app_info_localization_id: l.id,
+        attributes: { privacyPolicyText: text }
+      )
+    end
+    UI.success "Done patching privacyPolicyText for all localizations"
+  end
+
+  desc "Upload Pluq screenshots to App Store Connect"
+  lane :upload_screenshots do
+    api_key = app_store_connect_api_key(
+      key_id: "STDG5D3U5A",
+      issuer_id: "5c3aee75-98b2-489d-b18e-c273d41d1e02",
+      key_filepath: "./fastlane/AuthKey_STDG5D3U5A.p8",
+      in_house: false
+    )
+
+    deliver(
+      api_key: api_key,
+      app_identifier: "com.pluq.app",
+      submit_for_review: false,
+      skip_metadata: true,
+      skip_screenshots: false,
+      skip_binary_upload: true,
+      skip_app_version_update: true,
+      force: true,
+      overwrite_screenshots: true,
+      run_precheck_before_submit: false,
+      ignore_language_directory_validation: true
+    )
+  end
+end

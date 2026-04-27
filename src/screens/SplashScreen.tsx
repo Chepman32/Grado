@@ -1,0 +1,109 @@
+import React, { useEffect, useCallback, useRef } from 'react';
+import Animated, {
+  useSharedValue,
+  withTiming,
+  withDelay,
+  withSpring,
+  useAnimatedStyle,
+  runOnJS,
+  Easing,
+} from 'react-native-reanimated';
+import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+
+import type { RootStackParamList } from '../app/navigation/types';
+import { useThemedStyles, type AppTheme } from '../theme';
+import { SPRING_BOUNCY } from '../theme/animations';
+import { useOnboardingStore } from '../store/useOnboardingStore';
+
+type Props = NativeStackScreenProps<RootStackParamList, 'Splash'>;
+
+/**
+ * Splash screen with animated "GRADO" text.
+ * Uses Reanimated (not Skia) for reliability.
+ */
+export default function SplashScreen({ navigation }: Props): React.JSX.Element {
+  const styles = useThemedStyles(createStyles);
+  const navigated = useRef(false);
+
+  const onboardingCompleted = useOnboardingStore((state) => state.completed);
+
+  const goHome = useCallback(() => {
+    if (navigated.current) return;
+    navigated.current = true;
+    if (onboardingCompleted) {
+      navigation.replace('Home');
+    } else {
+      navigation.replace('Onboarding');
+    }
+  }, [navigation, onboardingCompleted]);
+
+  // Animation values
+  const titleOpacity = useSharedValue(0);
+  const titleScale = useSharedValue(0.8);
+  const titleLetterSpacing = useSharedValue(0);
+  const containerOpacity = useSharedValue(1);
+
+  useEffect(() => {
+    // Phase 1: Title fades in and scales up (0-600ms)
+    titleOpacity.value = withDelay(
+      200,
+      withTiming(1, { duration: 400, easing: Easing.out(Easing.ease) }),
+    );
+    titleScale.value = withDelay(
+      200,
+      withSpring(1, SPRING_BOUNCY),
+    );
+
+    // Phase 2: Letter spacing expands (600-1000ms)
+    titleLetterSpacing.value = withDelay(
+      600,
+      withSpring(16, { damping: 10, stiffness: 100 }),
+    );
+
+    // Phase 3: Fade out and navigate (1200-1700ms)
+    containerOpacity.value = withDelay(
+      1300,
+      withTiming(0, { duration: 400, easing: Easing.in(Easing.ease) }, (finished) => {
+        if (finished) {
+          runOnJS(goHome)();
+        }
+      }),
+    );
+
+    // Safety timeout — navigate even if animations fail
+    const safety = setTimeout(goHome, 2500);
+    return () => clearTimeout(safety);
+  }, [titleOpacity, titleScale, titleLetterSpacing, containerOpacity, goHome]);
+
+  const titleStyle = useAnimatedStyle(() => ({
+    opacity: titleOpacity.value,
+    transform: [{ scale: titleScale.value }],
+    letterSpacing: titleLetterSpacing.value,
+  }));
+
+  const containerStyle = useAnimatedStyle(() => ({
+    opacity: containerOpacity.value,
+  }));
+
+  return (
+    <Animated.View style={[styles.container, containerStyle]}>
+      <Animated.Text style={[styles.title, titleStyle]}>
+        GRADO
+      </Animated.Text>
+    </Animated.View>
+  );
+}
+
+const createStyles = (theme: AppTheme) => ({
+  container: {
+    flex: 1,
+    backgroundColor: theme.colors.background,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  title: {
+    fontSize: 48,
+    fontWeight: '700',
+    color: theme.colors.textPrimary,
+  },
+});

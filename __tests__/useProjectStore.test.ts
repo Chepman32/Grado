@@ -1,0 +1,197 @@
+jest.mock('../src/services/projectPreview', () => ({
+  generateProjectPreview: jest.fn(
+    async ({ projectId }) =>
+      `file:///documents/project-previews/${projectId}.jpg`,
+  ),
+  cleanupProjectPreview: jest.fn(async () => {}),
+  isGeneratedProjectPreview: jest.fn(() => true),
+}));
+
+import RNFS from 'react-native-fs';
+import { createFileStorage } from '../src/store/fileStorage';
+import { useProjectStore } from '../src/store/useProjectStore';
+import { useSettingsStore } from '../src/store/useSettingsStore';
+
+describe('useProjectStore', () => {
+  beforeEach(async () => {
+    useProjectStore.getState().reset();
+    useSettingsStore.setState({
+      themeId: 'dark',
+      exportFormat: 'mp4',
+      previewMode: 'current-playback',
+    });
+    await (
+      useProjectStore as unknown as {
+        persist?: { clearStorage?: () => Promise<void> };
+      }
+    ).persist?.clearStorage?.();
+  });
+
+  it('creates, duplicates, trashes, recovers, and permanently removes projects', () => {
+    const created = useProjectStore.getState().createProject({
+      sourceVideoUri: 'ph://video-1',
+      duration: 12,
+      filename: 'Summer.mov',
+    });
+
+    expect(useProjectStore.getState().projects).toHaveLength(1);
+    expect(created.name).toBe('Summer');
+
+    const duplicate = useProjectStore.getState().duplicateProject(created.id);
+    expect(duplicate?.name).toBe('Summer Copy');
+    expect(useProjectStore.getState().projects).toHaveLength(2);
+
+    useProjectStore.getState().removeProject(created.id);
+    expect(
+      useProjectStore
+        .getState()
+        .projects.find(project => project.id === created.id)?.status,
+    ).toBe('trash');
+    expect(useProjectStore.getState().trashActivated).toBe(true);
+
+    useProjectStore.getState().recoverProject(created.id);
+    expect(
+      useProjectStore
+        .getState()
+        .projects.find(project => project.id === created.id)?.status,
+    ).toBe('active');
+
+    useProjectStore.getState().removeProject(created.id);
+    useProjectStore.getState().removeProjectPermanently(created.id);
+    expect(
+      useProjectStore
+        .getState()
+        .projects.some(project => project.id === created.id),
+    ).toBe(false);
+  });
+
+  it('moves projects to folders, uncategorizes them when a folder is removed, and cleans trash', () => {
+    const folder = useProjectStore.getState().createFolder('Client');
+    const project = useProjectStore.getState().createProject({
+      sourceVideoUri: 'ph://video-2',
+      duration: 20,
+      filename: 'Client Reel.mp4',
+    });
+
+    useProjectStore.getState().moveProjectToFolder(project.id, folder.id);
+    expect(
+      useProjectStore.getState().projects.find(item => item.id === project.id)
+        ?.folderId,
+    ).toBe(folder.id);
+
+    useProjectStore.getState().removeFolder(folder.id);
+    expect(
+      useProjectStore.getState().projects.find(item => item.id === project.id)
+        ?.folderId,
+    ).toBeNull();
+
+    useProjectStore.getState().removeProject(project.id);
+    expect(
+      useProjectStore
+        .getState()
+        .projects.filter(item => item.status === 'trash'),
+    ).toHaveLength(1);
+
+    useProjectStore.getState().cleanTrash();
+    expect(useProjectStore.getState().projects).toHaveLength(0);
+    expect(useProjectStore.getState().trashActivated).toBe(true);
+  });
+
+  it('rehydrates document preview uris against the current sandbox path', async () => {
+    await RNFS.writeFile(
+      '/documents/project-previews/persisted-preview.jpg',
+      'preview',
+    );
+    await createFileStorage().setItem(
+      'grado-projects',
+      JSON.stringify({
+        state: {
+          folders: [],
+          projects: [
+            {
+              id: 'project-legacy',
+              name: 'Legacy',
+              sourceVideoUri: 'ph://video-legacy',
+              duration: 18,
+              folderId: null,
+              previousFolderId: null,
+              status: 'active',
+              previewUri:
+                'file:///private/var/mobile/Containers/Data/Application/OLD/Documents/project-previews/persisted-preview.jpg',
+              previewTimeMs: 1200,
+              sessionTimeMs: 1200,
+              previewKind: 'generated',
+              filterId: 'cinematic',
+              filterIntensity: 0.75,
+              createdAt: 1,
+              updatedAt: 1,
+            },
+          ],
+          trashActivated: false,
+        },
+        version: 1,
+      }),
+    );
+
+    await useProjectStore.persist.rehydrate();
+
+    expect(useProjectStore.getState().projects[0]?.previewUri).toBe(
+      'file:///documents/project-previews/persisted-preview.jpg',
+    );
+  });
+
+  it('regenerates missing generated previews after hydration', async () => {
+    await createFileStorage().setItem(
+      'grado-projects',
+      JSON.stringify({
+        state: {
+          folders: [],
+          projects: [
+            {
+              id: 'project-missing-preview',
+              name: 'Missing Preview',
+              sourceVideoUri: 'ph://video-missing',
+              duration: 24,
+              folderId: null,
+              previousFolderId: null,
+              status: 'active',
+              previewUri:
+                'file:///private/var/mobile/Containers/Data/Application/OLD/Documents/project-previews/missing-preview.jpg',
+              previewTimeMs: 2400,
+              sessionTimeMs: 2400,
+              previewKind: 'generated',
+              filterId: 'cinematic',
+              filterIntensity: 0.75,
+              createdAt: 1,
+              updatedAt: 1,
+            },
+          ],
+          trashActivated: false,
+        },
+        version: 1,
+      }),
+    );
+
+    await useProjectStore.persist.rehydrate();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    await new Promise(resolve => setTimeout(resolve, 0));
+
+    expect(useProjectStore.getState().projects[0]?.previewUri).toBe(
+      'file:///documents/project-previews/project-missing-preview.jpg',
+    );
+  });
+
+  it('uses the first second for generated previews when configured', () => {
+    useSettingsStore.setState({ previewMode: 'first-second' });
+
+    const created = useProjectStore.getState().createProject({
+      sourceVideoUri: 'ph://video-3',
+      duration: 12,
+      filename: 'Portrait.mov',
+    });
+
+    expect(created.previewTimeMs).toBe(1000);
+    expect(created.sessionTimeMs).toBe(0);
+    expect(created.previewKind).toBe('generated');
+  });
+});
