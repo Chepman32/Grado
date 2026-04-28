@@ -12,11 +12,11 @@
 		584967350298EC3F1735F36C /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB81A68108700A75B9A /* PrivacyInfo.xcprivacy */; };
 		761780ED2CA45674006654EE /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 761780EC2CA45674006654EE /* AppDelegate.swift */; };
 		81AB9BB82411601600AC10FF /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */; };
-		A0F100012F0A000100000001 /* Grado/GradoFilteredVideoView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0F100032F0A000100000001 /* Grado/GradoFilteredVideoView.swift */; };
-		A0F100022F0A000100000001 /* Grado/GradoFilteredVideoViewManager.m in Sources */ = {isa = PBXBuildFile; fileRef = A0F100042F0A000100000001 /* Grado/GradoFilteredVideoViewManager.m */; };
-		A0F100052F0A000100000001 /* Grado/GradoProjectPreviewModule.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0F100072F0A000100000001 /* Grado/GradoProjectPreviewModule.swift */; };
-		A0F100062F0A000100000001 /* Grado/GradoProjectPreviewModule.m in Sources */ = {isa = PBXBuildFile; fileRef = A0F100082F0A000100000001 /* Grado/GradoProjectPreviewModule.m */; };
-		A0F100092F0A000100000001 /* Grado/luts in Resources */ = {isa = PBXBuildFile; fileRef = A0F1000A2F0A000100000001 /* Grado/luts */; };
+		A0F100012F0A000100000001 /* GradoFilteredVideoView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0F100032F0A000100000001 /* GradoFilteredVideoView.swift */; };
+		A0F100022F0A000100000001 /* GradoFilteredVideoViewManager.m in Sources */ = {isa = PBXBuildFile; fileRef = A0F100042F0A000100000001 /* GradoFilteredVideoViewManager.m */; };
+		A0F100052F0A000100000001 /* GradoProjectPreviewModule.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0F100072F0A000100000001 /* GradoProjectPreviewModule.swift */; };
+		A0F100062F0A000100000001 /* GradoProjectPreviewModule.m in Sources */ = {isa = PBXBuildFile; fileRef = A0F100082F0A000100000001 /* GradoProjectPreviewModule.m */; };
+		A0F100092F0A000100000001 /* luts in Resources */ = {isa = PBXBuildFile; fileRef = A0F1000A2F0A000100000001 /* luts */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -29,11 +29,11 @@
 		5DCACB8F33CDC322A6C60F78 /* libPods-Grado.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-Grado.a"; sourceTree = BUILT_PRODUCTS_DIR; };
 		761780EC2CA45674006654EE /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AppDelegate.swift; path = Grado/AppDelegate.swift; sourceTree = "<group>"; };
 		81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.storyboard; name = LaunchScreen.storyboard; path = Grado/LaunchScreen.storyboard; sourceTree = "<group>"; };
-		A0F100032F0A000100000001 /* Grado/GradoFilteredVideoView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Grado/GradoFilteredVideoView.swift; sourceTree = "<group>"; };
-		A0F100042F0A000100000001 /* Grado/GradoFilteredVideoViewManager.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = Grado/GradoFilteredVideoViewManager.m; sourceTree = "<group>"; };
-		A0F100072F0A000100000001 /* Grado/GradoProjectPreviewModule.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Grado/GradoProjectPreviewModule.swift; sourceTree = "<group>"; };
-		A0F100082F0A000100000001 /* Grado/GradoProjectPreviewModule.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = Grado/GradoProjectPreviewModule.m; sourceTree = "<group>"; };
-		A0F1000A2F0A000100000001 /* Grado/luts */ = {isa = PBXFileReference; lastKnownFileType = folder; path = Grado/luts; sourceTree = "<group>"; };
+		A0F100032F0A000100000001 /* GradoFilteredVideoView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Grado/GradoFilteredVideoView.swift; sourceTree = "<group>"; };
+		A0F100042F0A000100000001 /* GradoFilteredVideoViewManager.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = Grado/GradoFilteredVideoViewManager.m; sourceTree = "<group>"; };
+		A0F100072F0A000100000001 /* GradoProjectPreviewModule.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Grado/GradoProjectPreviewModule.swift; sourceTree = "<group>"; };
+		A0F100082F0A000100000001 /* GradoProjectPreviewModule.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = Grado/GradoProjectPreviewModule.m; sourceTree = "<group>"; };
+		A0F1000A2F0A000100000001 /* luts */ = {isa = PBXFileReference; lastKnownFileType = folder; path = Grado/luts; sourceTree = "<group>"; };
 		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
 /* End PBXFileReference section */
 
@@ -53,12 +53,12 @@
 			isa = PBXGroup;
 			children = (
 				13B07FB51A68108700A75B9A /* Images.xcassets */,
-				A0F1000A2F0A000100000001 /* Grado/luts */,
+				A0F1000A2F0A000100000001 /* luts */,
 				761780EC2CA45674006654EE /* AppDelegate.swift */,
-				A0F100032F0A000100000001 /* Grado/GradoFilteredVideoView.swift */,
-				A0F100042F0A000100000001 /* Grado/GradoFilteredVideoViewManager.m */,
-				A0F100072F0A000100000001 /* Grado/GradoProjectPreviewModule.swift */,
-				A0F100082F0A000100000001 /* Grado/GradoProjectPreviewModule.m */,
+				A0F100032F0A000100000001 /* GradoFilteredVideoView.swift */,
+				A0F100042F0A000100000001 /* GradoFilteredVideoViewManager.m */,
+				A0F100072F0A000100000001 /* GradoProjectPreviewModule.swift */,
+				A0F100082F0A000100000001 /* GradoProjectPreviewModule.m */,
 				13B07FB61A68108700A75B9A /* Info.plist */,
 				81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */,
 				13B07FB81A68108700A75B9A /* PrivacyInfo.xcprivacy */,
@@ -176,7 +176,7 @@
 				81AB9BB82411601600AC10FF /* LaunchScreen.storyboard in Resources */,
 				13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */,
 				584967350298EC3F1735F36C /* PrivacyInfo.xcprivacy in Resources */,
-				A0F100092F0A000100000001 /* Grado/luts in Resources */,
+				A0F100092F0A000100000001 /* luts in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -207,13 +207,9 @@
 			inputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-Grado/Pods-Grado-frameworks-${CONFIGURATION}-input-files.xcfilelist",
 			);
-			inputPaths = (
-			);
 			name = "[CP] Embed Pods Frameworks";
 			outputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-Grado/Pods-Grado-frameworks-${CONFIGURATION}-output-files.xcfilelist",
-			);
-			outputPaths = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
@@ -250,13 +246,9 @@
 			inputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-Grado/Pods-Grado-resources-${CONFIGURATION}-input-files.xcfilelist",
 			);
-			inputPaths = (
-			);
 			name = "[CP] Copy Pods Resources";
 			outputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-Grado/Pods-Grado-resources-${CONFIGURATION}-output-files.xcfilelist",
-			);
-			outputPaths = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
@@ -271,10 +263,10 @@
 			buildActionMask = 2147483647;
 			files = (
 				761780ED2CA45674006654EE /* AppDelegate.swift in Sources */,
-				A0F100012F0A000100000001 /* Grado/GradoFilteredVideoView.swift in Sources */,
-				A0F100022F0A000100000001 /* Grado/GradoFilteredVideoViewManager.m in Sources */,
-				A0F100052F0A000100000001 /* Grado/GradoProjectPreviewModule.swift in Sources */,
-				A0F100062F0A000100000001 /* Grado/GradoProjectPreviewModule.m in Sources */,
+				A0F100012F0A000100000001 /* GradoFilteredVideoView.swift in Sources */,
+				A0F100022F0A000100000001 /* GradoFilteredVideoViewManager.m in Sources */,
+				A0F100052F0A000100000001 /* GradoProjectPreviewModule.swift in Sources */,
+				A0F100062F0A000100000001 /* GradoProjectPreviewModule.m in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
