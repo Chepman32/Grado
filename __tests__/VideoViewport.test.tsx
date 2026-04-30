@@ -17,12 +17,15 @@ jest.mock('../src/components/editor/GradoFilteredVideoView', () => {
 
 function getNativeVideos(renderer: ReactTestRenderer.ReactTestRenderer) {
   return renderer.root.findAll(
-    node => node.type === 'GradoFilteredVideoView',
+    node => String(node.type) === 'GradoFilteredVideoView',
   ) as Array<
     ReactTestRenderer.ReactTestInstance & {
       props: {
         filterId: string;
         comparisonPosition: number;
+        animatedProps?: {
+          comparisonPosition?: number;
+        };
       };
     }
   >;
@@ -33,6 +36,9 @@ function getBaseNativeVideoProps(
 ) {
   const props = getNativeVideos(renderer)[0].props as {
     comparisonPosition: number;
+    animatedProps?: {
+      comparisonPosition?: number;
+    };
   };
   return props;
 }
@@ -71,13 +77,16 @@ describe('VideoViewport', () => {
     }
   });
 
-  it('renders a clipped original preview above the filtered preview', async () => {
+  it('passes the comparison position to the native iOS preview', async () => {
     await ReactTestRenderer.act(async () => {
       renderer = ReactTestRenderer.create(<VideoViewport height={300} />);
     });
 
-    expect(getBaseNativeVideoProps(renderer!).comparisonPosition).toBe(0);
     expect(getNativeVideos(renderer!)).toHaveLength(1);
+    expect(getBaseNativeVideoProps(renderer!).comparisonPosition).toBe(0.5);
+    expect(getBaseNativeVideoProps(renderer!).animatedProps).toMatchObject({
+      comparisonPosition: 0.5,
+    });
 
     const viewport = renderer!.root
       .findAllByType(View)
@@ -89,8 +98,8 @@ describe('VideoViewport', () => {
       });
     });
 
-    expect(getNativeVideos(renderer!)).toHaveLength(2);
-    expect(getNativeVideos(renderer!)[1].props.filterId).toBe('original');
+    expect(getNativeVideos(renderer!)).toHaveLength(1);
+    expect(getNativeVideos(renderer!)[0].props.filterId).toBe('cinematic');
 
     const compareControl = renderer!.root.findByProps({
       accessibilityLabel: 'Compare original and filtered preview',

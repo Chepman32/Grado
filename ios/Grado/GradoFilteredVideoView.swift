@@ -17,6 +17,13 @@ private struct ColorCubeData {
   let data: Data
 }
 
+private struct VideoRenderState {
+  let filterId: String
+  let matrix: [CGFloat]
+  let intensity: CGFloat
+  let comparisonPosition: CGFloat
+}
+
 @objc(GradoFilteredVideoView)
 final class GradoFilteredVideoView: UIView {
   @objc var sourceUri: NSString? {
@@ -73,7 +80,11 @@ final class GradoFilteredVideoView: UIView {
     }
   }
 
-  @objc var comparisonPosition: NSNumber = 0.5
+  @objc var comparisonPosition: NSNumber = 0 {
+    didSet {
+      updateComparisonState()
+    }
+  }
 
   @objc var seekToTime: NSNumber = 0
 
@@ -105,6 +116,7 @@ final class GradoFilteredVideoView: UIView {
   private var currentFilterId = "original"
   private var currentMatrix = identityColorMatrix
   private var currentIntensity: CGFloat = 1
+  private var currentComparisonPosition: CGFloat = 0
   private var lutCache: [String: ColorCubeData] = [:]
   private let lutCacheLock = NSLock()
   private var scheduledFrameRefresh: DispatchWorkItem?
@@ -249,13 +261,9 @@ final class GradoFilteredVideoView: UIView {
   }
 
   private func makeVideoComposition(for asset: AVAsset) -> AVVideoComposition {
-    let filterState = snapshotFilterState()
-    return makeVideoComposition(
-      for: asset,
-      filterId: filterState.filterId,
-      matrix: filterState.matrix,
-      intensity: filterState.intensity
-    )
+    makeVideoComposition(for: asset) { [weak self] in
+      self?.snapshotFilterState()
+    }
   }
 
   private func makeVideoComposition(
@@ -269,7 +277,22 @@ final class GradoFilteredVideoView: UIView {
       : filterId.trimmingCharacters(in: .whitespacesAndNewlines)
     let resolvedMatrix = matrix.count == identityColorMatrix.count ? matrix : identityColorMatrix
     let resolvedIntensity = max(0, min(intensity, 1))
+    let renderState = VideoRenderState(
+      filterId: resolvedFilterId,
+      matrix: resolvedMatrix,
+      intensity: resolvedIntensity,
+      comparisonPosition: 0
+    )
 
+    return makeVideoComposition(for: asset) {
+      renderState
+    }
+  }
+
+  private func makeVideoComposition(
+    for asset: AVAsset,
+    stateProvider: @escaping () -> VideoRenderState?
+  ) -> AVVideoComposition {
     let filterHandler: (AVAsynchronousCIImageFilteringRequest) -> Void = { [weak self] request in
       let originalImage = request.sourceImage
       let sourceImage = originalImage.clampedToExtent()
@@ -280,13 +303,23 @@ final class GradoFilteredVideoView: UIView {
         return
       }
 
-      let outputImage = self.filteredImage(
+      guard let renderState = stateProvider() else {
+        request.finish(with: originalImage, context: nil)
+        return
+      }
+
+      let filteredOutputImage = self.filteredImage(
         for: sourceImage,
         time: time,
-        filterId: resolvedFilterId,
-        matrix: resolvedMatrix,
-        intensity: resolvedIntensity
+        filterId: renderState.filterId,
+        matrix: renderState.matrix,
+        intensity: renderState.intensity
       ).cropped(to: originalImage.extent)
+      let outputImage = self.comparisonImage(
+        originalImage: originalImage,
+        filteredImage: filteredOutputImage,
+        position: renderState.comparisonPosition
+      )
       request.finish(with: outputImage, context: self.ciContext)
     }
 
@@ -351,6 +384,47 @@ final class GradoFilteredVideoView: UIView {
       matrix: filterState.matrix,
       intensity: filterState.intensity
     )
+  }
+
+  private func comparisonImage(
+    originalImage: CIImage,
+    filteredImage: CIImage,
+    position: CGFloat
+  ) -> CIImage {
+    let clampedPosition = max(0, min(position, 1))
+    let extent = originalImage.extent
+
+    guard clampedPosition > 0.001 else {
+      return filteredImage.cropped(to: extent)
+    }
+
+    guard clampedPosition < 0.999, extent.width > 0, extent.height > 0 else {
+      return originalImage.cropped(to: extent)
+    }
+
+    guard let blend = CIFilter(name: "CIBlendWithMask") else {
+      return filteredImage.cropped(to: extent)
+    }
+
+    let originalRect = CGRect(
+      x: extent.minX,
+      y: extent.minY,
+      width: extent.width * clampedPosition,
+      height: extent.height
+    )
+    let blackMask = CIImage(
+      color: CIColor(red: 0, green: 0, blue: 0, alpha: 1)
+    ).cropped(to: extent)
+    let whiteMask = CIImage(
+      color: CIColor(red: 1, green: 1, blue: 1, alpha: 1)
+    ).cropped(to: originalRect)
+    let mask = whiteMask.composited(over: blackMask)
+
+    blend.setValue(originalImage, forKey: kCIInputImageKey)
+    blend.setValue(filteredImage, forKey: kCIInputBackgroundImageKey)
+    blend.setValue(mask, forKey: kCIInputMaskImageKey)
+
+    return blend.outputImage?.cropped(to: extent) ?? filteredImage.cropped(to: extent)
   }
 
   private func applyColorMatrixFilter(
@@ -1481,6 +1555,19 @@ final class GradoFilteredVideoView: UIView {
     scheduleFilterRefreshIfNeeded()
   }
 
+  private func updateComparisonState() {
+    let nextComparisonPosition = max(
+      0,
+      min(CGFloat(truncating: comparisonPosition), 1)
+    )
+
+    filterStateLock.lock()
+    currentComparisonPosition = nextComparisonPosition
+    filterStateLock.unlock()
+
+    refreshCurrentFrameIfPaused()
+  }
+
   private func parseFilterMatrixPayload(_ rawPayload: String) -> [CGFloat]? {
     let payload = rawPayload.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !payload.isEmpty else { return nil }
@@ -1498,13 +1585,19 @@ final class GradoFilteredVideoView: UIView {
     return values
   }
 
-  private func snapshotFilterState() -> (filterId: String, matrix: [CGFloat], intensity: CGFloat) {
+  private func snapshotFilterState() -> VideoRenderState {
     filterStateLock.lock()
     let filterId = currentFilterId
     let matrix = currentMatrix
     let intensity = currentIntensity
+    let comparisonPosition = currentComparisonPosition
     filterStateLock.unlock()
-    return (filterId, matrix, intensity)
+    return VideoRenderState(
+      filterId: filterId,
+      matrix: matrix,
+      intensity: intensity,
+      comparisonPosition: comparisonPosition
+    )
   }
 
   private func scheduleFilterRefreshIfNeeded() {
@@ -1564,6 +1657,13 @@ final class GradoFilteredVideoView: UIView {
   }
 
   private func refreshCurrentFrameIfPaused() {
+    if !Thread.isMainThread {
+      DispatchQueue.main.async { [weak self] in
+        self?.refreshCurrentFrameIfPaused()
+      }
+      return
+    }
+
     guard paused else { return }
     guard let item = player.currentItem, item.status == .readyToPlay else { return }
 

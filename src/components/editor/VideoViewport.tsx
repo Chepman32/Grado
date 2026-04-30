@@ -4,6 +4,7 @@ import Video from 'react-native-video';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   runOnJS,
+  useAnimatedProps,
   useAnimatedStyle,
   useSharedValue,
   withTiming,
@@ -19,7 +20,9 @@ import { useEditorStore } from '../../store/useEditorStore';
 import { useVideoPlayer } from '../../hooks/useVideoPlayer';
 import { getFilterById, IDENTITY_MATRIX } from '../../filters';
 import { useAppTheme, useThemedStyles, type AppTheme } from '../../theme';
-import GradoFilteredVideoView from './GradoFilteredVideoView';
+import GradoFilteredVideoView, {
+  type GradoFilteredVideoViewProps,
+} from './GradoFilteredVideoView';
 import AnimatedPressable from '../shared/AnimatedPressable';
 
 interface VideoViewportProps {
@@ -197,27 +200,12 @@ export default function VideoViewport({
       comparisonEnabledValue.value,
   }));
 
-  const iosOriginalComparisonClipAnimatedStyle = useAnimatedStyle(() => {
-    const splitX =
-      viewportWidthValue.value *
-      comparisonPosition.value *
-      comparisonEnabledValue.value;
-
-    return {
-      transform: [{ translateX: splitX - viewportWidthValue.value }],
-    };
-  });
-
-  const iosOriginalComparisonContentAnimatedStyle = useAnimatedStyle(() => {
-    const splitX =
-      viewportWidthValue.value *
-      comparisonPosition.value *
-      comparisonEnabledValue.value;
-
-    return {
-      transform: [{ translateX: viewportWidthValue.value - splitX }],
-    };
-  });
+  const iosComparisonAnimatedProps = useAnimatedProps<
+    Pick<GradoFilteredVideoViewProps, 'comparisonPosition'>
+  >(() => ({
+    comparisonPosition:
+      comparisonPosition.value * comparisonEnabledValue.value,
+  }));
 
   const compareTouchTargetAnimatedStyle = useAnimatedStyle(() => {
     const width = viewportWidthValue.value;
@@ -311,7 +299,10 @@ export default function VideoViewport({
                 filterMatrix={filterMatrix}
                 filterMatrixPayload={filterMatrix.join(',')}
                 filterIntensity={filterIntensity}
-                comparisonPosition={0}
+                comparisonPosition={
+                  showComparison ? accessibilityComparisonPosition : 0
+                }
+                animatedProps={iosComparisonAnimatedProps}
                 seekToTime={requestedSeekTime}
                 seekRequestId={seekRequestId}
                 onLoad={event => onLoad(event.nativeEvent.duration)}
@@ -336,43 +327,6 @@ export default function VideoViewport({
           ) : (
             <View style={[StyleSheet.absoluteFill, styles.placeholder]} />
           )}
-
-          {Platform.OS === 'ios' &&
-            showComparison &&
-            currentVideoUri &&
-            viewportWidth > 0 && (
-              <Animated.View
-                style={[
-                  StyleSheet.absoluteFill,
-                  styles.iosOriginalComparisonClip,
-                  iosOriginalComparisonClipAnimatedStyle,
-                ]}
-                pointerEvents="none"
-              >
-                <Animated.View
-                  style={[
-                    StyleSheet.absoluteFill,
-                    iosOriginalComparisonContentAnimatedStyle,
-                  ]}
-                >
-                  <GradoFilteredVideoView
-                    sourceUri={currentVideoUri}
-                    style={StyleSheet.absoluteFill}
-                    paused={!isPlaying}
-                    muted
-                    repeatVideo
-                    resizeMode="contain"
-                    filterId="original"
-                    filterMatrix={IDENTITY_MATRIX}
-                    filterMatrixPayload={IDENTITY_MATRIX.join(',')}
-                    filterIntensity={0}
-                    comparisonPosition={0}
-                    seekToTime={requestedSeekTime}
-                    seekRequestId={seekRequestId}
-                  />
-                </Animated.View>
-              </Animated.View>
-            )}
 
           {/* Temporary Android-only preview overlay */}
           {Platform.OS !== 'ios' && !isOriginal && overlayOpacity > 0 && (
@@ -467,9 +421,6 @@ const createStyles = (theme: AppTheme) => ({
     top: 0,
     right: 0,
     bottom: 0,
-  },
-  iosOriginalComparisonClip: {
-    overflow: 'hidden',
   },
   compareTouchTarget: {
     position: 'absolute',
