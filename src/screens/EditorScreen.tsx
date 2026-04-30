@@ -9,7 +9,12 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ChevronLeft, Play, Pause } from 'lucide-react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import { runOnJS } from 'react-native-reanimated';
+import Animated, {
+  runOnJS,
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+} from 'react-native-reanimated';
 
 import type { RootStackParamList } from '../app/navigation/types';
 import { useEditorStore } from '../store/useEditorStore';
@@ -36,6 +41,14 @@ import { useTranslation } from '../i18n/useTranslation';
 type Props = NativeStackScreenProps<RootStackParamList, 'Editor'>;
 
 const VIEWPORT_RATIO = 0.50;
+const TIMELINE_TRACK_HEIGHT = 4;
+const TIMELINE_THUMB_SIZE = 20;
+const TIMELINE_SYNC_DURATION_MS = 90;
+const TIMELINE_RELEASE_LOCK_MS = 180;
+
+function clampRatio(ratio: number): number {
+  return Math.min(Math.max(ratio, 0), 1);
+}
 
 export default function EditorScreen({ route, navigation }: Props): React.JSX.Element {
   const theme = useAppTheme();
@@ -69,8 +82,14 @@ export default function EditorScreen({ route, navigation }: Props): React.JSX.El
   const previewMode = useSettingsStore((state) => state.previewMode);
 
   const [sliderVisible, setSliderVisible] = useState(false);
-  const [timelineWidth, setTimelineWidth] = useState(0);
   const hydratedProjectId = useRef<string | null>(null);
+  const timelineReleaseTimeout = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+  const isTimelineScrubbing = useRef(false);
+  const timelineWidthValue = useSharedValue(0);
+  const timelineDurationValue = useSharedValue(0);
+  const timelineProgressValue = useSharedValue(0);
 
   const generatedPreviewTimeMs = project
     ? resolveProjectPreviewTimeMs({
@@ -234,42 +253,126 @@ export default function EditorScreen({ route, navigation }: Props): React.JSX.El
   }, [activeFilterId, exportFormat, filterIntensity, navigation, project]);
 
   // Timeline progress ratio
-  const progressRatio = duration > 0 ? currentTime / duration : 0;
+  const progressRatio = duration > 0 ? clampRatio(currentTime / duration) : 0;
 
-  const seekToRatio = useCallback((ratio: number) => {
-    if (duration <= 0) {
+  useEffect(() => {
+    timelineDurationValue.value = duration;
+  }, [duration, timelineDurationValue]);
+
+  useEffect(() => {
+    if (isTimelineScrubbing.current) {
       return;
     }
 
-    const clampedRatio = Math.max(0, Math.min(1, ratio));
-    requestSeek(clampedRatio * duration);
-  }, [duration, requestSeek]);
+    timelineProgressValue.value = withTiming(progressRatio, {
+      duration: TIMELINE_SYNC_DURATION_MS,
+    });
+  }, [progressRatio, timelineProgressValue]);
 
-  const seekToPosition = useCallback((x: number) => {
-    if (timelineWidth <= 0) {
-      return;
-    }
-
-    seekToRatio(x / timelineWidth);
-  }, [seekToRatio, timelineWidth]);
-
-  const handleTimelineLayout = useCallback((event: LayoutChangeEvent) => {
-    setTimelineWidth(event.nativeEvent.layout.width);
+  useEffect(() => {
+    return () => {
+      if (timelineReleaseTimeout.current) {
+        clearTimeout(timelineReleaseTimeout.current);
+      }
+    };
   }, []);
 
+  const beginTimelineScrubbing = useCallback(() => {
+    if (timelineReleaseTimeout.current) {
+      clearTimeout(timelineReleaseTimeout.current);
+      timelineReleaseTimeout.current = null;
+    }
+    isTimelineScrubbing.current = true;
+  }, []);
+
+  const finishTimelineScrubbing = useCallback(
+    (ratio: number) => {
+      if (timelineReleaseTimeout.current) {
+        clearTimeout(timelineReleaseTimeout.current);
+      }
+
+      timelineReleaseTimeout.current = setTimeout(() => {
+        isTimelineScrubbing.current = false;
+        timelineProgressValue.value = clampRatio(ratio);
+        timelineReleaseTimeout.current = null;
+      }, TIMELINE_RELEASE_LOCK_MS);
+    },
+    [timelineProgressValue],
+  );
+
+  const updateTimelineFromX = useCallback(
+    (x: number) => {
+      'worklet';
+      const width = timelineWidthValue.value;
+      const timelineDuration = timelineDurationValue.value;
+      if (width <= 0 || timelineDuration <= 0) {
+        return;
+      }
+
+      const nextRatio = Math.min(Math.max(x / width, 0), 1);
+      timelineProgressValue.value = nextRatio;
+      runOnJS(requestSeek)(nextRatio * timelineDuration);
+    },
+    [
+      requestSeek,
+      timelineDurationValue,
+      timelineProgressValue,
+      timelineWidthValue,
+    ],
+  );
+
+  const timelineProgressAnimatedStyle = useAnimatedStyle(() => ({
+    width: timelineWidthValue.value * timelineProgressValue.value,
+  }));
+
+  const timelineThumbAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [
+      {
+        translateX:
+          timelineWidthValue.value * timelineProgressValue.value -
+          TIMELINE_THUMB_SIZE / 2,
+      },
+    ],
+  }));
+
+  const handleTimelineLayout = useCallback(
+    (event: LayoutChangeEvent) => {
+      timelineWidthValue.value = event.nativeEvent.layout.width;
+    },
+    [timelineWidthValue],
+  );
+
   const timelinePanGesture = Gesture.Pan()
+    .onStart(({ x }) => {
+      'worklet';
+      runOnJS(beginTimelineScrubbing)();
+      updateTimelineFromX(x);
+    })
     .onUpdate(({ x }) => {
       'worklet';
-      runOnJS(seekToPosition)(x);
+      updateTimelineFromX(x);
+    })
+    .onFinalize(() => {
+      'worklet';
+      runOnJS(finishTimelineScrubbing)(timelineProgressValue.value);
     });
 
   const timelineTapGesture = Gesture.Tap()
     .onEnd(({ x }) => {
       'worklet';
-      runOnJS(seekToPosition)(x);
+      runOnJS(beginTimelineScrubbing)();
+      updateTimelineFromX(x);
+      runOnJS(finishTimelineScrubbing)(timelineProgressValue.value);
+    })
+    .onFinalize(() => {
+      'worklet';
+      runOnJS(finishTimelineScrubbing)(timelineProgressValue.value);
     });
 
-  const timelineGesture = Gesture.Simultaneous(timelinePanGesture, timelineTapGesture);
+  const timelineGesture = Gesture.Simultaneous(
+    timelinePanGesture,
+    timelineTapGesture,
+  );
 
   if (!project) {
     return (
@@ -296,7 +399,6 @@ export default function EditorScreen({ route, navigation }: Props): React.JSX.El
 
       {/* Control Deck */}
       <View style={[styles.controlDeck, { paddingBottom: insets.bottom + spacing.xs }]}>
-
         {/* Play/Pause + Time */}
         <View style={styles.playbackRow}>
           <AnimatedPressable onPress={togglePlayback} style={styles.playButton}>
@@ -315,20 +417,20 @@ export default function EditorScreen({ route, navigation }: Props): React.JSX.El
         <View style={styles.timelineContainer}>
           <GestureDetector gesture={timelineGesture}>
             <View onLayout={handleTimelineLayout} style={styles.timelineTrack}>
-              <View
+              <Animated.View
                 style={[
                   styles.timelineProgress,
+                  timelineProgressAnimatedStyle,
                   {
-                    width: `${progressRatio * 100}%`,
                     backgroundColor: activeFilter?.dominantColor ?? colors.accent,
                   },
                 ]}
               />
-              <View
+              <Animated.View
                 style={[
                   styles.timelineThumb,
+                  timelineThumbAnimatedStyle,
                   {
-                    left: `${progressRatio * 100}%`,
                     backgroundColor: activeFilter?.dominantColor ?? colors.accent,
                   },
                 ]}
@@ -435,23 +537,23 @@ const createStyles = (theme: AppTheme) => {
       marginBottom: spacing.md,
     },
     timelineTrack: {
-      height: 4,
+      height: TIMELINE_TRACK_HEIGHT,
       backgroundColor: colors.surfaceLighter,
-      borderRadius: 2,
+      borderRadius: TIMELINE_TRACK_HEIGHT / 2,
       position: 'relative',
       overflow: 'visible',
     },
     timelineProgress: {
       height: '100%',
-      borderRadius: 2,
+      borderRadius: TIMELINE_TRACK_HEIGHT / 2,
     },
     timelineThumb: {
       position: 'absolute',
-      top: -4,
-      width: 12,
-      height: 12,
-      borderRadius: 6,
-      marginLeft: -6,
+      top: (TIMELINE_TRACK_HEIGHT - TIMELINE_THUMB_SIZE) / 2,
+      left: 0,
+      width: TIMELINE_THUMB_SIZE,
+      height: TIMELINE_THUMB_SIZE,
+      borderRadius: TIMELINE_THUMB_SIZE / 2,
     },
     timelineTouchTarget: {
       position: 'absolute',
