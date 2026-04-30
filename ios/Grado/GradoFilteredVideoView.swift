@@ -73,11 +73,7 @@ final class GradoFilteredVideoView: UIView {
     }
   }
 
-  @objc var comparisonPosition: NSNumber = 0.5 {
-    didSet {
-      updateComparisonPosition()
-    }
-  }
+  @objc var comparisonPosition: NSNumber = 0.5
 
   @objc var seekToTime: NSNumber = 0
 
@@ -93,10 +89,7 @@ final class GradoFilteredVideoView: UIView {
   @objc var onEnd: RCTDirectEventBlock?
 
   private let player = AVPlayer()
-  private let originalPlayer = AVPlayer()
   private let playerLayer = AVPlayerLayer()
-  private let originalPlayerLayer = AVPlayerLayer()
-  private let comparisonMaskLayer = CALayer()
   private let filterStateLock = NSLock()
   private let ciContext: CIContext = {
     if let device = MTLCreateSystemDefaultDevice() {
@@ -112,7 +105,6 @@ final class GradoFilteredVideoView: UIView {
   private var currentFilterId = "original"
   private var currentMatrix = identityColorMatrix
   private var currentIntensity: CGFloat = 1
-  private var currentComparisonPosition: CGFloat = 0.5
   private var lutCache: [String: ColorCubeData] = [:]
   private let lutCacheLock = NSLock()
   private var scheduledFrameRefresh: DispatchWorkItem?
@@ -137,14 +129,11 @@ final class GradoFilteredVideoView: UIView {
       player.removeTimeObserver(timeObserver)
     }
     player.replaceCurrentItem(with: nil)
-    originalPlayer.replaceCurrentItem(with: nil)
   }
 
   override func layoutSubviews() {
     super.layoutSubviews()
     playerLayer.frame = bounds
-    originalPlayerLayer.frame = bounds
-    updateComparisonMaskFrame()
   }
 
   private func commonInit() {
@@ -153,15 +142,9 @@ final class GradoFilteredVideoView: UIView {
 
     playerLayer.player = player
     layer.addSublayer(playerLayer)
-    originalPlayerLayer.player = originalPlayer
-    originalPlayerLayer.mask = comparisonMaskLayer
-    layer.addSublayer(originalPlayerLayer)
-    comparisonMaskLayer.backgroundColor = UIColor.black.cgColor
 
     player.isMuted = muted
-    originalPlayer.isMuted = true
     updateVideoGravity()
-    updateComparisonMaskFrame()
     updateFilterState()
     installTimeObserver()
   }
@@ -185,40 +168,35 @@ final class GradoFilteredVideoView: UIView {
 
     guard let rawUri = sourceUri as String? else {
       player.replaceCurrentItem(with: nil)
-      originalPlayer.replaceCurrentItem(with: nil)
       return
     }
 
     let trimmedUri = rawUri.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmedUri.isEmpty else {
       player.replaceCurrentItem(with: nil)
-      originalPlayer.replaceCurrentItem(with: nil)
       return
     }
 
     sourceTask = Task { [weak self] in
       guard let self else { return }
-      guard let items = await self.preparePlayerItems(for: trimmedUri) else { return }
+      guard let item = await self.preparePlayerItem(for: trimmedUri) else { return }
       guard !Task.isCancelled else { return }
 
       await MainActor.run {
         guard self.sourceUri as String? == trimmedUri else { return }
-        self.attachPlayerItems(items)
+        self.attachPlayerItem(item)
       }
     }
   }
 
-  private func preparePlayerItems(
-    for uri: String
-  ) async -> (filtered: AVPlayerItem, original: AVPlayerItem)? {
+  private func preparePlayerItem(for uri: String) async -> AVPlayerItem? {
     guard let asset = await loadAsset(from: uri) else {
       return nil
     }
 
-    let filteredItem = AVPlayerItem(asset: asset)
-    filteredItem.videoComposition = makeVideoComposition(for: asset)
-    let originalItem = AVPlayerItem(asset: asset)
-    return (filteredItem, originalItem)
+    let item = AVPlayerItem(asset: asset)
+    item.videoComposition = makeVideoComposition(for: asset)
+    return item
   }
 
   private func loadAsset(from uri: String) async -> AVAsset? {
@@ -284,8 +262,7 @@ final class GradoFilteredVideoView: UIView {
     for asset: AVAsset,
     filterId: String,
     matrix: [CGFloat],
-    intensity: CGFloat,
-    comparisonPositionProvider: (() -> CGFloat)? = nil
+    intensity: CGFloat
   ) -> AVVideoComposition {
     let resolvedFilterId = filterId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
       ? "original"
@@ -303,17 +280,12 @@ final class GradoFilteredVideoView: UIView {
         return
       }
 
-      let filteredOutput = self.filteredImage(
+      let outputImage = self.filteredImage(
         for: sourceImage,
         time: time,
         filterId: resolvedFilterId,
         matrix: resolvedMatrix,
         intensity: resolvedIntensity
-      ).cropped(to: originalImage.extent)
-      let outputImage = self.comparisonImage(
-        original: originalImage,
-        filtered: filteredOutput,
-        position: comparisonPositionProvider?()
       ).cropped(to: originalImage.extent)
       request.finish(with: outputImage, context: self.ciContext)
     }
@@ -379,43 +351,6 @@ final class GradoFilteredVideoView: UIView {
       matrix: filterState.matrix,
       intensity: filterState.intensity
     )
-  }
-
-  private func comparisonImage(
-    original: CIImage,
-    filtered: CIImage,
-    position: CGFloat?
-  ) -> CIImage {
-    guard let position else {
-      return filtered.cropped(to: original.extent)
-    }
-
-    let extent = original.extent
-    let clampedPosition = max(0, min(position, 1))
-
-    if clampedPosition <= 0.001 {
-      return filtered.cropped(to: extent)
-    }
-
-    if clampedPosition >= 0.999 {
-      return original.cropped(to: extent)
-    }
-
-    let splitX = extent.minX + extent.width * clampedPosition
-    let originalRect = CGRect(
-      x: extent.minX,
-      y: extent.minY,
-      width: max(0, splitX - extent.minX),
-      height: extent.height
-    )
-    let originalSide = original.cropped(to: originalRect)
-
-    return originalSide
-      .applyingFilter(
-        "CISourceOverCompositing",
-        parameters: [kCIInputBackgroundImageKey: filtered.cropped(to: extent)]
-      )
-      .cropped(to: extent)
   }
 
   private func applyColorMatrixFilter(
@@ -1546,37 +1481,6 @@ final class GradoFilteredVideoView: UIView {
     scheduleFilterRefreshIfNeeded()
   }
 
-  private func updateComparisonPosition() {
-    let nextPosition = max(0, min(CGFloat(truncating: comparisonPosition), 1))
-
-    filterStateLock.lock()
-    currentComparisonPosition = nextPosition
-    filterStateLock.unlock()
-
-    if Thread.isMainThread {
-      updateComparisonMaskFrame()
-    } else {
-      DispatchQueue.main.async { [weak self] in
-        self?.updateComparisonMaskFrame()
-      }
-    }
-  }
-
-  private func updateComparisonMaskFrame() {
-    let position = snapshotComparisonPosition()
-    let width = bounds.width * position
-    CATransaction.begin()
-    CATransaction.setDisableActions(true)
-    comparisonMaskLayer.frame = CGRect(
-      x: 0,
-      y: 0,
-      width: width,
-      height: bounds.height
-    )
-    originalPlayerLayer.isHidden = width <= 0.5
-    CATransaction.commit()
-  }
-
   private func parseFilterMatrixPayload(_ rawPayload: String) -> [CGFloat]? {
     let payload = rawPayload.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !payload.isEmpty else { return nil }
@@ -1601,13 +1505,6 @@ final class GradoFilteredVideoView: UIView {
     let intensity = currentIntensity
     filterStateLock.unlock()
     return (filterId, matrix, intensity)
-  }
-
-  private func snapshotComparisonPosition() -> CGFloat {
-    filterStateLock.lock()
-    let position = currentComparisonPosition
-    filterStateLock.unlock()
-    return position
   }
 
   private func scheduleFilterRefreshIfNeeded() {
@@ -1655,12 +1552,6 @@ final class GradoFilteredVideoView: UIView {
 
     guard player.currentItem != nil else { return }
 
-    originalPlayer.seek(
-      to: targetTime,
-      toleranceBefore: .zero,
-      toleranceAfter: .zero
-    )
-
     player.seek(
       to: targetTime,
       toleranceBefore: .zero,
@@ -1684,12 +1575,6 @@ final class GradoFilteredVideoView: UIView {
     isRefreshingCurrentFrame = true
     let currentTime = player.currentTime()
 
-    originalPlayer.seek(
-      to: currentTime,
-      toleranceBefore: .zero,
-      toleranceAfter: .zero
-    )
-
     player.seek(
       to: currentTime,
       toleranceBefore: .zero,
@@ -1706,12 +1591,10 @@ final class GradoFilteredVideoView: UIView {
     }
   }
 
-  private func attachPlayerItems(_ items: (filtered: AVPlayerItem, original: AVPlayerItem)) {
+  private func attachPlayerItem(_ item: AVPlayerItem) {
     tearDownCurrentItemObservers()
-    player.replaceCurrentItem(with: items.filtered)
-    originalPlayer.replaceCurrentItem(with: items.original)
-    observeCurrentItem(items.filtered)
-    updateComparisonMaskFrame()
+    player.replaceCurrentItem(with: item)
+    observeCurrentItem(item)
     updatePlaybackState()
   }
 
@@ -1755,12 +1638,10 @@ final class GradoFilteredVideoView: UIView {
 
   private func handlePlaybackEnded() {
     if repeatVideo {
-      originalPlayer.seek(to: .zero)
       player.seek(to: .zero) { [weak self] _ in
         guard let self else { return }
         self.refreshCurrentFrameIfPaused()
         if !self.paused {
-          self.originalPlayer.play()
           self.player.play()
         }
       }
@@ -1768,8 +1649,6 @@ final class GradoFilteredVideoView: UIView {
     }
 
     player.pause()
-    originalPlayer.pause()
-    originalPlayer.seek(to: .zero)
     player.seek(to: .zero) { [weak self] _ in
       guard let self else { return }
       self.refreshCurrentFrameIfPaused()
@@ -1783,18 +1662,8 @@ final class GradoFilteredVideoView: UIView {
 
     if paused {
       player.pause()
-      originalPlayer.pause()
       refreshCurrentFrameIfPaused()
     } else {
-      let currentTime = player.currentTime()
-      originalPlayer.seek(
-        to: currentTime,
-        toleranceBefore: .zero,
-        toleranceAfter: .zero
-      ) { [weak self] _ in
-        guard let self, !self.paused else { return }
-        self.originalPlayer.play()
-      }
       player.play()
     }
   }
@@ -1803,13 +1672,10 @@ final class GradoFilteredVideoView: UIView {
     switch resizeMode as String {
     case "contain":
       playerLayer.videoGravity = .resizeAspect
-      originalPlayerLayer.videoGravity = .resizeAspect
     case "stretch":
       playerLayer.videoGravity = .resize
-      originalPlayerLayer.videoGravity = .resize
     default:
       playerLayer.videoGravity = .resizeAspectFill
-      originalPlayerLayer.videoGravity = .resizeAspectFill
     }
   }
 

@@ -15,12 +15,24 @@ jest.mock('../src/components/editor/GradoFilteredVideoView', () => {
   };
 });
 
-function getNativeVideoProps(renderer: ReactTestRenderer.ReactTestRenderer) {
-  const props = renderer.root.find(
+function getNativeVideos(renderer: ReactTestRenderer.ReactTestRenderer) {
+  return renderer.root.findAll(
     node => node.type === 'GradoFilteredVideoView',
-  ).props as {
+  ) as Array<
+    ReactTestRenderer.ReactTestInstance & {
+      props: {
+        filterId: string;
+        comparisonPosition: number;
+      };
+    }
+  >;
+}
+
+function getBaseNativeVideoProps(
+  renderer: ReactTestRenderer.ReactTestRenderer,
+) {
+  const props = getNativeVideos(renderer)[0].props as {
     comparisonPosition: number;
-    animatedProps?: { comparisonPosition?: number };
   };
   return props;
 }
@@ -59,13 +71,13 @@ describe('VideoViewport', () => {
     }
   });
 
-  it('passes the compare position to the native filtered video view', async () => {
+  it('renders a clipped original preview above the filtered preview', async () => {
     await ReactTestRenderer.act(async () => {
       renderer = ReactTestRenderer.create(<VideoViewport height={300} />);
     });
 
-    expect(getNativeVideoProps(renderer!).comparisonPosition).toBe(0.5);
-    expect(getNativeVideoProps(renderer!).animatedProps).toBeDefined();
+    expect(getBaseNativeVideoProps(renderer!).comparisonPosition).toBe(0);
+    expect(getNativeVideos(renderer!)).toHaveLength(1);
 
     const viewport = renderer!.root
       .findAllByType(View)
@@ -77,6 +89,9 @@ describe('VideoViewport', () => {
       });
     });
 
+    expect(getNativeVideos(renderer!)).toHaveLength(2);
+    expect(getNativeVideos(renderer!)[1].props.filterId).toBe('original');
+
     const compareControl = renderer!.root.findByProps({
       accessibilityLabel: 'Compare original and filtered preview',
     });
@@ -87,7 +102,11 @@ describe('VideoViewport', () => {
       });
     });
 
-    expect(getNativeVideoProps(renderer!).comparisonPosition).toBeCloseTo(0.6);
+    expect(
+      renderer!.root.findByProps({
+        accessibilityLabel: 'Compare original and filtered preview',
+      }).props.accessibilityValue.now,
+    ).toBe(60);
   });
 
   it('hides the compare control for the original filter', async () => {
@@ -142,7 +161,8 @@ describe('VideoViewport', () => {
       compareToggle.props.onPress();
     });
 
-    expect(getNativeVideoProps(renderer!).comparisonPosition).toBe(0);
+    expect(getBaseNativeVideoProps(renderer!).comparisonPosition).toBe(0);
+    expect(getNativeVideos(renderer!)).toHaveLength(1);
     expect(
       renderer!.root.findAllByProps({
         accessibilityLabel: 'Compare original and filtered preview',
