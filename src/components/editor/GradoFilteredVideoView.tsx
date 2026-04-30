@@ -64,10 +64,19 @@ export default function GradoFilteredVideoView(
   props: GradoFilteredVideoViewProps,
 ): React.JSX.Element {
   const eventId = useRef(`grado-video-${Math.random().toString(36).slice(2)}`);
+  const onLoadRef = useRef(props.onLoad);
+  const onProgressRef = useRef(props.onProgress);
+  const onEndRef = useRef(props.onEnd);
   const emitter = useMemo(() => {
     const nativeModule = NativeModules.GradoFilteredVideoViewEvents;
     return nativeModule ? new NativeEventEmitter(nativeModule) : null;
   }, []);
+
+  useEffect(() => {
+    onLoadRef.current = props.onLoad;
+    onProgressRef.current = props.onProgress;
+    onEndRef.current = props.onEnd;
+  }, [props.onEnd, props.onLoad, props.onProgress]);
 
   useEffect(() => {
     if (!emitter) {
@@ -84,7 +93,7 @@ export default function GradoFilteredVideoView(
           return;
         }
 
-        props.onLoad?.({
+        onLoadRef.current?.({
           nativeEvent: { duration: event.duration },
         } as NativeSyntheticEvent<GradoFilteredVideoLoadEvent>);
       },
@@ -100,7 +109,7 @@ export default function GradoFilteredVideoView(
           return;
         }
 
-        props.onProgress?.({
+        onProgressRef.current?.({
           nativeEvent: { currentTime: event.currentTime },
         } as NativeSyntheticEvent<GradoFilteredVideoProgressEvent>);
       },
@@ -113,7 +122,7 @@ export default function GradoFilteredVideoView(
           return;
         }
 
-        props.onEnd?.();
+        onEndRef.current?.();
       },
     );
 
@@ -122,7 +131,7 @@ export default function GradoFilteredVideoView(
       progressSubscription.remove();
       endSubscription.remove();
     };
-  }, [emitter, props]);
+  }, [emitter]);
 
   const { animatedProps, ...propsWithoutAnimatedProps } = props;
   const nativeProps = { ...propsWithoutAnimatedProps };

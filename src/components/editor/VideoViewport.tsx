@@ -32,6 +32,7 @@ const COMPARE_LINE_WIDTH = 2;
 const INITIAL_COMPARE_POSITION = 0.5;
 const COMPARE_ACCESSIBILITY_STEP = 0.1;
 const COMPARE_SETTLE_DURATION_MS = 180;
+const PLAYBACK_PROGRESS_INTERVAL_MS = 50;
 
 function clampComparisonPosition(position: number): number {
   return Math.min(Math.max(position, 0), 1);
@@ -326,6 +327,7 @@ export default function VideoViewport({
                 paused={!isPlaying}
                 muted={isMuted}
                 repeat
+                progressUpdateInterval={PLAYBACK_PROGRESS_INTERVAL_MS}
                 onLoad={({ duration }) => handleAndroidLoad(duration)}
                 onProgress={({ currentTime }) => onProgress(currentTime)}
                 onEnd={onEnd}

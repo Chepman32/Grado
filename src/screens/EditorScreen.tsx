@@ -10,6 +10,8 @@ import { ChevronLeft, Play, Pause } from 'lucide-react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
+  cancelAnimation,
+  Easing,
   runOnJS,
   useAnimatedStyle,
   useSharedValue,
@@ -43,8 +45,10 @@ type Props = NativeStackScreenProps<RootStackParamList, 'Editor'>;
 const VIEWPORT_RATIO = 0.50;
 const TIMELINE_TRACK_HEIGHT = 4;
 const TIMELINE_THUMB_SIZE = 20;
-const TIMELINE_SYNC_DURATION_MS = 90;
+const TIMELINE_SETTLE_DURATION_MS = 90;
+const TIMELINE_PLAYBACK_INTERPOLATION_MS = 80;
 const TIMELINE_RELEASE_LOCK_MS = 180;
+const TIMELINE_HARD_SYNC_THRESHOLD = 0.08;
 
 function clampRatio(ratio: number): number {
   return Math.min(Math.max(ratio, 0), 1);
@@ -259,15 +263,51 @@ export default function EditorScreen({ route, navigation }: Props): React.JSX.El
     timelineDurationValue.value = duration;
   }, [duration, timelineDurationValue]);
 
+  const syncTimelineProgress = useCallback(
+    (ratio: number) => {
+      const clampedRatio = clampRatio(ratio);
+
+      if (duration <= 0) {
+        cancelAnimation(timelineProgressValue);
+        timelineProgressValue.value = 0;
+        return;
+      }
+
+      const visualRatio = timelineProgressValue.value;
+      const shouldHardSync =
+        Math.abs(visualRatio - clampedRatio) > TIMELINE_HARD_SYNC_THRESHOLD ||
+        clampedRatio <= 0 ||
+        clampedRatio >= 1;
+
+      if (isPlaying && shouldHardSync) {
+        cancelAnimation(timelineProgressValue);
+        timelineProgressValue.value = clampedRatio;
+        return;
+      }
+
+      if (!isPlaying) {
+        timelineProgressValue.value = withTiming(clampedRatio, {
+          duration: TIMELINE_SETTLE_DURATION_MS,
+          easing: Easing.out(Easing.cubic),
+        });
+        return;
+      }
+
+      timelineProgressValue.value = withTiming(clampedRatio, {
+        duration: TIMELINE_PLAYBACK_INTERPOLATION_MS,
+        easing: Easing.linear,
+      });
+    },
+    [duration, isPlaying, timelineProgressValue],
+  );
+
   useEffect(() => {
     if (isTimelineScrubbing.current) {
       return;
     }
 
-    timelineProgressValue.value = withTiming(progressRatio, {
-      duration: TIMELINE_SYNC_DURATION_MS,
-    });
-  }, [progressRatio, timelineProgressValue]);
+    syncTimelineProgress(progressRatio);
+  }, [progressRatio, syncTimelineProgress]);
 
   useEffect(() => {
     return () => {
@@ -282,8 +322,9 @@ export default function EditorScreen({ route, navigation }: Props): React.JSX.El
       clearTimeout(timelineReleaseTimeout.current);
       timelineReleaseTimeout.current = null;
     }
+    cancelAnimation(timelineProgressValue);
     isTimelineScrubbing.current = true;
-  }, []);
+  }, [timelineProgressValue]);
 
   const finishTimelineScrubbing = useCallback(
     (ratio: number) => {
@@ -293,11 +334,11 @@ export default function EditorScreen({ route, navigation }: Props): React.JSX.El
 
       timelineReleaseTimeout.current = setTimeout(() => {
         isTimelineScrubbing.current = false;
-        timelineProgressValue.value = clampRatio(ratio);
+        syncTimelineProgress(ratio);
         timelineReleaseTimeout.current = null;
       }, TIMELINE_RELEASE_LOCK_MS);
     },
-    [timelineProgressValue],
+    [syncTimelineProgress],
   );
 
   const updateTimelineFromX = useCallback(

@@ -150,7 +150,7 @@ final class GradoFilteredVideoView: UIView {
   }
 
   private func installTimeObserver() {
-    let interval = CMTime(seconds: 0.25, preferredTimescale: 600)
+    let interval = CMTime(seconds: 0.05, preferredTimescale: 600)
     timeObserver = player.addPeriodicTimeObserver(
       forInterval: interval,
       queue: .main
