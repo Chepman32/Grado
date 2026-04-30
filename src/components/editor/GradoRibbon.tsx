@@ -7,6 +7,7 @@ import Animated, {
   withSpring,
   useAnimatedStyle,
   runOnJS,
+  type WithSpringConfig,
 } from 'react-native-reanimated';
 
 import { FILTERS, getFilterById } from '../../filters';
@@ -19,7 +20,6 @@ import {
   useThemedStyles,
   type AppTheme,
 } from '../../theme';
-import { SPRING_STIFF } from '../../theme/animations';
 
 // ---------------------------------------------------------------------------
 // Layout constants
@@ -31,6 +31,13 @@ const SWATCH_RADIUS = 14;
 const SWATCH_STRIDE = SWATCH_WIDTH + SWATCH_GAP;
 const RIBBON_HEIGHT = SWATCH_HEIGHT;
 const TOTAL_FILTERS = FILTERS.length;
+const EDGE_RESISTANCE = 0.14;
+const RIBBON_SNAP_SPRING: WithSpringConfig = {
+  damping: 36,
+  stiffness: 320,
+  mass: 1,
+  overshootClamping: true,
+};
 // The full scrollable width of all swatches.
 const CONTENT_WIDTH = TOTAL_FILTERS * SWATCH_STRIDE - SWATCH_GAP;
 
@@ -117,7 +124,10 @@ export default function GradoRibbon({ containerWidth }: GradoRibbonProps): React
     const idx = FILTERS.findIndex((f) => f.id === activeFilterId);
     if (idx >= 0) {
       lastIndex.value = idx;
-      translateX.value = withSpring(indexToOffset(idx, containerWidth), SPRING_STIFF);
+      translateX.value = withSpring(
+        indexToOffset(idx, containerWidth),
+        RIBBON_SNAP_SPRING,
+      );
     }
   }, [activeFilterId, containerWidth, lastIndex, translateX]);
 
@@ -141,7 +151,10 @@ export default function GradoRibbon({ containerWidth }: GradoRibbonProps): React
 
       const clampedIndex = Math.min(Math.max(index, 0), TOTAL_FILTERS - 1);
       lastIndex.value = clampedIndex;
-      translateX.value = withSpring(indexToOffset(clampedIndex, containerWidth), SPRING_STIFF);
+      translateX.value = withSpring(
+        indexToOffset(clampedIndex, containerWidth),
+        RIBBON_SNAP_SPRING,
+      );
       commitFilter(clampedIndex);
     },
     [commitFilter, containerWidth, lastIndex, translateX],
@@ -150,8 +163,6 @@ export default function GradoRibbon({ containerWidth }: GradoRibbonProps): React
   // ---- Min / max allowed scroll offsets so we can't drag past ends
   const minOffset = containerWidth > 0 ? indexToOffset(TOTAL_FILTERS - 1, containerWidth) : 0;
   const maxOffset = containerWidth > 0 ? indexToOffset(0, containerWidth) : 0;
-
-  const RUBBER_BAND = 0.3;
 
   const panGesture = Gesture.Pan()
     .minDistance(6)
@@ -166,9 +177,9 @@ export default function GradoRibbon({ containerWidth }: GradoRibbonProps): React
       // Rubber-band resistance beyond bounds.
       let next: number;
       if (raw < minOffset) {
-        next = minOffset + (raw - minOffset) * RUBBER_BAND;
+        next = minOffset + (raw - minOffset) * EDGE_RESISTANCE;
       } else if (raw > maxOffset) {
-        next = maxOffset + (raw - maxOffset) * RUBBER_BAND;
+        next = maxOffset + (raw - maxOffset) * EDGE_RESISTANCE;
       } else {
         next = raw;
       }
@@ -188,7 +199,10 @@ export default function GradoRibbon({ containerWidth }: GradoRibbonProps): React
       if (containerWidth === 0) return;
       const snappedIndex = offsetToIndex(translateX.value, containerWidth);
       const clampedIndex = Math.min(Math.max(snappedIndex, 0), TOTAL_FILTERS - 1);
-      translateX.value = withSpring(indexToOffset(clampedIndex, containerWidth), SPRING_STIFF);
+      translateX.value = withSpring(
+        indexToOffset(clampedIndex, containerWidth),
+        RIBBON_SNAP_SPRING,
+      );
       runOnJS(commitFilter)(clampedIndex);
     });
 
