@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { View, Text } from 'react-native';
 import { Canvas, RoundedRect } from '@shopify/react-native-skia';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
@@ -29,7 +29,10 @@ const SWATCH_HEIGHT = 48;
 const SWATCH_GAP = 2;
 const SWATCH_RADIUS = 14;
 const SWATCH_STRIDE = SWATCH_WIDTH + SWATCH_GAP;
-const RIBBON_HEIGHT = SWATCH_HEIGHT;
+const INDICATOR_SIZE = 8;
+const INDICATOR_GAP = 4;
+const RIBBON_HEIGHT = SWATCH_HEIGHT + (INDICATOR_SIZE + INDICATOR_GAP) * 2;
+const RIBBON_VIEWPORT_TOP = INDICATOR_SIZE + INDICATOR_GAP;
 const TOTAL_FILTERS = FILTERS.length;
 const EDGE_RESISTANCE = 0.14;
 const RIBBON_SNAP_SPRING: WithSpringConfig = {
@@ -108,7 +111,9 @@ export default function GradoRibbon({ containerWidth }: GradoRibbonProps): React
   const haptics = useHaptics();
 
   const activeIndex = FILTERS.findIndex((f) => f.id === activeFilterId);
-  const initialOffset = containerWidth > 0 ? indexToOffset(activeIndex < 0 ? 0 : activeIndex, containerWidth) : 0;
+  const resolvedActiveIndex = activeIndex < 0 ? 0 : activeIndex;
+  const initialOffset = containerWidth > 0 ? indexToOffset(resolvedActiveIndex, containerWidth) : 0;
+  const [displayedIndex, setDisplayedIndex] = useState(resolvedActiveIndex);
 
   // Current scroll offset (translateX applied to the swatch row).
   const translateX = useSharedValue(initialOffset);
@@ -123,6 +128,7 @@ export default function GradoRibbon({ containerWidth }: GradoRibbonProps): React
     if (containerWidth === 0) return;
     const idx = FILTERS.findIndex((f) => f.id === activeFilterId);
     if (idx >= 0) {
+      setDisplayedIndex(idx);
       lastIndex.value = idx;
       translateX.value = withSpring(
         indexToOffset(idx, containerWidth),
@@ -145,11 +151,16 @@ export default function GradoRibbon({ containerWidth }: GradoRibbonProps): React
     haptics.light();
   }, [haptics]);
 
+  const updateDisplayedFilter = useCallback((index: number) => {
+    setDisplayedIndex(Math.min(Math.max(index, 0), TOTAL_FILTERS - 1));
+  }, []);
+
   const snapToIndex = useCallback(
     (index: number) => {
       if (containerWidth === 0) return;
 
       const clampedIndex = Math.min(Math.max(index, 0), TOTAL_FILTERS - 1);
+      setDisplayedIndex(clampedIndex);
       lastIndex.value = clampedIndex;
       translateX.value = withSpring(
         indexToOffset(clampedIndex, containerWidth),
@@ -190,6 +201,7 @@ export default function GradoRibbon({ containerWidth }: GradoRibbonProps): React
         const currentIdx = offsetToIndex(next, containerWidth);
         if (currentIdx !== lastIndex.value) {
           lastIndex.value = currentIdx;
+          runOnJS(updateDisplayedFilter)(currentIdx);
           runOnJS(triggerHaptic)();
         }
       }
@@ -203,6 +215,7 @@ export default function GradoRibbon({ containerWidth }: GradoRibbonProps): React
         indexToOffset(clampedIndex, containerWidth),
         RIBBON_SNAP_SPRING,
       );
+      runOnJS(updateDisplayedFilter)(clampedIndex);
       runOnJS(commitFilter)(clampedIndex);
     });
 
@@ -219,6 +232,7 @@ export default function GradoRibbon({ containerWidth }: GradoRibbonProps): React
         runOnJS(triggerHaptic)();
       }
 
+      runOnJS(updateDisplayedFilter)(tappedIndex);
       runOnJS(snapToIndex)(tappedIndex);
     });
 
@@ -228,41 +242,47 @@ export default function GradoRibbon({ containerWidth }: GradoRibbonProps): React
     transform: [{ translateX: translateX.value }],
   }));
 
-  // ---- Derive displayed filter name from store (reactive to external changes)
-  const activeFilter = getFilterById(activeFilterId) ?? FILTERS[0];
+  // ---- Derive displayed filter name from the swatch currently under center.
+  const displayedFilter =
+    FILTERS[displayedIndex] ?? getFilterById(activeFilterId) ?? FILTERS[0];
 
   return (
     <View style={styles.wrapper}>
       {/* Filter name label */}
-      <Text style={styles.filterName}>{activeFilter?.name ?? ''}</Text>
+      <Text style={styles.filterName}>{displayedFilter?.name ?? ''}</Text>
 
       <View style={styles.ribbonOuter}>
         <GestureDetector gesture={composedGesture}>
           <View style={styles.ribbonContainer}>
-            {/* Skia canvas for swatch rectangles */}
-            <Animated.View style={[styles.swatchRow, animatedRowStyle]}>
-              <Canvas style={{ width: CONTENT_WIDTH, height: RIBBON_HEIGHT }}>
-                {FILTERS.map((filter, index) => (
-                  <RoundedRect
-                    key={filter.id}
-                    x={index * SWATCH_STRIDE}
-                    y={0}
-                    width={SWATCH_WIDTH}
-                    height={SWATCH_HEIGHT}
-                    r={SWATCH_RADIUS}
-                    color={filter.dominantColor}
-                  />
-                ))}
-              </Canvas>
-            </Animated.View>
+            <View style={styles.ribbonViewport}>
+              {/* Skia canvas for swatch rectangles */}
+              <Animated.View style={[styles.swatchRow, animatedRowStyle]}>
+                <Canvas style={{ width: CONTENT_WIDTH, height: SWATCH_HEIGHT }}>
+                  {FILTERS.map((filter, index) => (
+                    <RoundedRect
+                      key={filter.id}
+                      x={index * SWATCH_STRIDE}
+                      y={0}
+                      width={SWATCH_WIDTH}
+                      height={SWATCH_HEIGHT}
+                      r={SWATCH_RADIUS}
+                      color={filter.dominantColor}
+                    />
+                  ))}
+                </Canvas>
+              </Animated.View>
 
-            <View
-              pointerEvents="none"
-              style={[
-                styles.selectionFrame,
-                { backgroundColor: withAlpha(activeFilter?.dominantColor ?? colors.textPrimary, 0.18) },
-              ]}
-            />
+              <View
+                pointerEvents="none"
+                style={[
+                  styles.selectionFrame,
+                  { backgroundColor: withAlpha(displayedFilter?.dominantColor ?? colors.textPrimary, 0.18) },
+                ]}
+              />
+            </View>
+
+            <View pointerEvents="none" style={styles.selectionIndicatorTop} />
+            <View pointerEvents="none" style={styles.selectionIndicatorBottom} />
           </View>
         </GestureDetector>
       </View>
@@ -291,6 +311,14 @@ const createStyles = (theme: AppTheme) => ({
     flex: 1,
     position: 'relative',
   },
+  ribbonViewport: {
+    position: 'absolute',
+    top: RIBBON_VIEWPORT_TOP,
+    right: 0,
+    left: 0,
+    height: SWATCH_HEIGHT,
+    overflow: 'hidden',
+  },
   selectionFrame: {
     position: 'absolute',
     top: 0,
@@ -301,6 +329,34 @@ const createStyles = (theme: AppTheme) => ({
     borderRadius: SWATCH_RADIUS,
     borderWidth: 2,
     borderColor: theme.colors.selectionBorder,
+  },
+  selectionIndicatorTop: {
+    position: 'absolute',
+    top: 0,
+    left: '50%',
+    width: 0,
+    height: 0,
+    marginLeft: -INDICATOR_SIZE / 2,
+    borderLeftWidth: INDICATOR_SIZE / 2,
+    borderRightWidth: INDICATOR_SIZE / 2,
+    borderTopWidth: INDICATOR_SIZE,
+    borderLeftColor: 'transparent',
+    borderRightColor: 'transparent',
+    borderTopColor: theme.colors.selectionBorder,
+  },
+  selectionIndicatorBottom: {
+    position: 'absolute',
+    bottom: 0,
+    left: '50%',
+    width: 0,
+    height: 0,
+    marginLeft: -INDICATOR_SIZE / 2,
+    borderLeftWidth: INDICATOR_SIZE / 2,
+    borderRightWidth: INDICATOR_SIZE / 2,
+    borderBottomWidth: INDICATOR_SIZE,
+    borderLeftColor: 'transparent',
+    borderRightColor: 'transparent',
+    borderBottomColor: theme.colors.selectionBorder,
   },
   swatchRow: {
     position: 'absolute',
