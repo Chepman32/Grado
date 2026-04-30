@@ -201,4 +201,79 @@ describe('EditorScreen', () => {
       filterIntensity: 0.7,
     });
   });
+
+  it('keeps playback paused when an autosave updates the project', async () => {
+    type ProjectStoreState = ReturnType<typeof useProjectStore.getState>;
+    const updateProjectSession: ProjectStoreState['updateProjectSession'] = (
+      targetProjectId,
+      update,
+    ) => {
+      useProjectStore.setState((state) => ({
+        projects: state.projects.map((project) =>
+          project.id === targetProjectId
+            ? {
+                ...project,
+                filterId: update.filterId ?? project.filterId,
+                filterIntensity:
+                  update.filterIntensity ?? project.filterIntensity,
+                previewTimeMs:
+                  update.previewTimeMs ?? project.previewTimeMs,
+                sessionTimeMs:
+                  update.sessionTimeMs ?? project.sessionTimeMs,
+                updatedAt: Date.now(),
+              }
+            : project,
+        ),
+      }));
+    };
+
+    useProjectStore.setState({
+      projects: [
+        {
+          id: 'project-3',
+          name: 'Demo',
+          sourceVideoUri: 'ph://demo',
+          duration: 42,
+          folderId: null,
+          previousFolderId: null,
+          status: 'active',
+          previewUri: 'ph://demo',
+          previewTimeMs: 2500,
+          sessionTimeMs: 2500,
+          previewKind: 'generated',
+          filterId: 'cinematic',
+          filterIntensity: 0.7,
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ],
+      updateProjectSession,
+    });
+
+    const navigation = {
+      navigate: jest.fn(),
+      addListener: jest.fn(() => () => {}),
+    } as unknown as EditorProps['navigation'];
+
+    const route = {
+      key: 'Editor-project-3',
+      name: 'Editor',
+      params: { projectId: 'project-3' },
+    } as EditorProps['route'];
+
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(
+        <EditorScreen route={route} navigation={navigation} />,
+      );
+    });
+
+    expect(useEditorStore.getState().isPlaying).toBe(true);
+
+    await ReactTestRenderer.act(async () => {
+      useEditorStore.getState().setIsPlaying(false);
+      jest.advanceTimersByTime(400);
+    });
+
+    expect(useEditorStore.getState().isPlaying).toBe(false);
+  });
 });

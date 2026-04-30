@@ -138,17 +138,11 @@ export default function EditorScreen({ route, navigation }: Props): React.JSX.El
     if (savedTimeSeconds > 0) {
       requestSeek(savedTimeSeconds);
     }
-
-    return () => {
-      hydratedProjectId.current = null;
-      reset();
-    };
   }, [
     project?.id,
     project,
     projectId,
     requestSeek,
-    reset,
     setActiveFilter,
     setCurrentTime,
     setDuration,
@@ -157,6 +151,13 @@ export default function EditorScreen({ route, navigation }: Props): React.JSX.El
     setIsPlaying,
     setVideoUri,
   ]);
+
+  useEffect(() => {
+    return () => {
+      hydratedProjectId.current = null;
+      reset();
+    };
+  }, [projectId, reset]);
 
   useEffect(() => {
     if (!project) {
