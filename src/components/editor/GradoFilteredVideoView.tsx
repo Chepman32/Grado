@@ -8,6 +8,7 @@ import {
   type ViewProps,
   type ViewStyle,
 } from 'react-native';
+import Animated from 'react-native-reanimated';
 
 export interface GradoFilteredVideoLoadEvent {
   duration: number;
@@ -32,8 +33,13 @@ export interface GradoFilteredVideoViewProps extends ViewProps {
   seekRequestId?: number;
   eventId?: string;
   style?: StyleProp<ViewStyle>;
+  animatedProps?: Partial<
+    Pick<GradoFilteredVideoViewProps, 'comparisonPosition'>
+  >;
   onLoad?: (event: NativeSyntheticEvent<GradoFilteredVideoLoadEvent>) => void;
-  onProgress?: (event: NativeSyntheticEvent<GradoFilteredVideoProgressEvent>) => void;
+  onProgress?: (
+    event: NativeSyntheticEvent<GradoFilteredVideoProgressEvent>,
+  ) => void;
   onEnd?: () => void;
 }
 
@@ -49,6 +55,10 @@ const END_EVENT = 'GradoFilteredVideoViewEnd';
 
 const NativeGradoFilteredVideoView =
   requireNativeComponent<GradoFilteredVideoViewProps>('GradoFilteredVideoView');
+
+const AnimatedNativeGradoFilteredVideoView = Animated.createAnimatedComponent(
+  NativeGradoFilteredVideoView,
+);
 
 export default function GradoFilteredVideoView(
   props: GradoFilteredVideoViewProps,
@@ -114,14 +124,16 @@ export default function GradoFilteredVideoView(
     };
   }, [emitter, props]);
 
-  const nativeProps = { ...props };
+  const { animatedProps, ...propsWithoutAnimatedProps } = props;
+  const nativeProps = { ...propsWithoutAnimatedProps };
   delete nativeProps.onLoad;
   delete nativeProps.onProgress;
   delete nativeProps.onEnd;
 
   return (
-    <NativeGradoFilteredVideoView
+    <AnimatedNativeGradoFilteredVideoView
       {...nativeProps}
+      animatedProps={animatedProps}
       eventId={eventId.current}
     />
   );

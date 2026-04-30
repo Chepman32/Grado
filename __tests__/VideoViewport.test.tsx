@@ -16,9 +16,13 @@ jest.mock('../src/components/editor/GradoFilteredVideoView', () => {
 });
 
 function getNativeVideoProps(renderer: ReactTestRenderer.ReactTestRenderer) {
-  return renderer.root.find(
-    (node) => node.type === 'GradoFilteredVideoView',
-  ).props as { comparisonPosition: number };
+  const props = renderer.root.find(
+    node => node.type === 'GradoFilteredVideoView',
+  ).props as {
+    comparisonPosition: number;
+    animatedProps?: { comparisonPosition?: number };
+  };
+  return props;
 }
 
 describe('VideoViewport', () => {
@@ -61,10 +65,11 @@ describe('VideoViewport', () => {
     });
 
     expect(getNativeVideoProps(renderer!).comparisonPosition).toBe(0.5);
+    expect(getNativeVideoProps(renderer!).animatedProps).toBeDefined();
 
     const viewport = renderer!.root
       .findAllByType(View)
-      .find((node) => typeof node.props.onLayout === 'function');
+      .find(node => typeof node.props.onLayout === 'function');
 
     await ReactTestRenderer.act(async () => {
       viewport!.props.onLayout({
@@ -93,7 +98,7 @@ describe('VideoViewport', () => {
 
     const viewport = renderer!.root
       .findAllByType(View)
-      .find((node) => typeof node.props.onLayout === 'function');
+      .find(node => typeof node.props.onLayout === 'function');
 
     await ReactTestRenderer.act(async () => {
       viewport!.props.onLayout({
@@ -101,6 +106,43 @@ describe('VideoViewport', () => {
       });
     });
 
+    expect(
+      renderer!.root.findAllByProps({
+        accessibilityLabel: 'Compare original and filtered preview',
+      }),
+    ).toHaveLength(0);
+  });
+
+  it('toggles the compare slider off', async () => {
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(<VideoViewport height={300} />);
+    });
+
+    const viewport = renderer!.root
+      .findAllByType(View)
+      .find(node => typeof node.props.onLayout === 'function');
+
+    await ReactTestRenderer.act(async () => {
+      viewport!.props.onLayout({
+        nativeEvent: { layout: { width: 320, height: 300 } },
+      });
+    });
+
+    expect(
+      renderer!.root.findAllByProps({
+        accessibilityLabel: 'Compare original and filtered preview',
+      }).length,
+    ).toBeGreaterThan(0);
+
+    const compareToggle = renderer!.root.findByProps({
+      accessibilityLabel: 'Comparison slider',
+    });
+
+    await ReactTestRenderer.act(async () => {
+      compareToggle.props.onPress();
+    });
+
+    expect(getNativeVideoProps(renderer!).comparisonPosition).toBe(0);
     expect(
       renderer!.root.findAllByProps({
         accessibilityLabel: 'Compare original and filtered preview',
