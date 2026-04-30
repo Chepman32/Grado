@@ -27,6 +27,7 @@ export interface GradoFilteredVideoViewProps extends ViewProps {
   filterMatrix: ReadonlyArray<number>;
   filterMatrixPayload?: string;
   filterIntensity: number;
+  comparisonPosition?: number;
   seekToTime?: number;
   seekRequestId?: number;
   eventId?: string;
@@ -113,12 +114,10 @@ export default function GradoFilteredVideoView(
     };
   }, [emitter, props]);
 
-  const {
-    onLoad: _onLoad,
-    onProgress: _onProgress,
-    onEnd: _onEnd,
-    ...nativeProps
-  } = props;
+  const nativeProps = { ...props };
+  delete nativeProps.onLoad;
+  delete nativeProps.onProgress;
+  delete nativeProps.onEnd;
 
   return (
     <NativeGradoFilteredVideoView

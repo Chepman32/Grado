@@ -1,9 +1,9 @@
-import React, { useCallback, useEffect, useRef } from 'react';
-import { Platform, StyleSheet, View } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { LayoutChangeEvent, Platform, StyleSheet, View } from 'react-native';
 import Video from 'react-native-video';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { runOnJS, useSharedValue } from 'react-native-reanimated';
-import { Volume2, VolumeX } from 'lucide-react-native';
+import { ChevronsLeftRight, Volume2, VolumeX } from 'lucide-react-native';
 
 import { useEditorStore } from '../../store/useEditorStore';
 import { useVideoPlayer } from '../../hooks/useVideoPlayer';
@@ -18,6 +18,15 @@ import AnimatedPressable from '../shared/AnimatedPressable';
 
 interface VideoViewportProps {
   height: number;
+}
+
+const COMPARE_HANDLE_SIZE = 44;
+const COMPARE_TOUCH_WIDTH = 72;
+const COMPARE_LINE_WIDTH = 2;
+const INITIAL_COMPARE_POSITION = 0.5;
+
+function clampComparisonPosition(position: number): number {
+  return Math.min(Math.max(position, 0), 1);
 }
 
 /**
@@ -46,17 +55,42 @@ export default function VideoViewport({ height }: VideoViewportProps): React.JSX
 
   const savedIntensity = useRef<number>(filterIntensity);
   const { videoRef, toggle, seek, onLoad, onProgress, onEnd } = useVideoPlayer();
+  const [viewportWidth, setViewportWidth] = useState(0);
+  const [comparisonPosition, setComparisonPosition] = useState(
+    INITIAL_COMPARE_POSITION,
+  );
 
   const filter = getFilterById(activeFilterId);
   const dominantColor = filter?.dominantColor ?? colors.accent;
   const filterMatrix = filter?.colorMatrix ?? IDENTITY_MATRIX;
   const isOriginal = activeFilterId === 'original';
-
+  const showComparison = Boolean(currentVideoUri) && !isOriginal;
+  const compareLineX = viewportWidth * comparisonPosition;
   // Overlay opacity = 0.35 * intensity for non-original filters
   const overlayOpacity = isOriginal ? 0 : 0.35 * filterIntensity;
+  const compareTouchLeft =
+    viewportWidth > COMPARE_TOUCH_WIDTH
+      ? Math.min(
+          Math.max(compareLineX - COMPARE_TOUCH_WIDTH / 2, 0),
+          viewportWidth - COMPARE_TOUCH_WIDTH,
+        )
+      : 0;
+  const androidComparisonOverlayStyle = useMemo(
+    () => ({
+      left: viewportWidth > 0 ? compareLineX : 0,
+      backgroundColor: dominantColor,
+      opacity: overlayOpacity,
+    }),
+    [compareLineX, dominantColor, overlayOpacity, viewportWidth],
+  );
 
   // Long-press gesture — show original while held
   const isLongPressing = useSharedValue(false);
+  const compareDragStartPosition = useSharedValue(INITIAL_COMPARE_POSITION);
+
+  const handleViewportLayout = useCallback((event: LayoutChangeEvent) => {
+    setViewportWidth(event.nativeEvent.layout.width);
+  }, []);
 
   const restoreIntensity = useCallback(() => {
     setFilterIntensity(savedIntensity.current);
@@ -89,6 +123,34 @@ export default function VideoViewport({ height }: VideoViewportProps): React.JSX
 
   const composedGesture = Gesture.Exclusive(longPressGesture, tapGesture);
 
+  const updateComparisonPosition = useCallback((position: number) => {
+    setComparisonPosition(clampComparisonPosition(position));
+  }, []);
+
+  const handleComparisonAccessibilityAction = useCallback(
+    (event: { nativeEvent: { actionName: string } }) => {
+      const direction = event.nativeEvent.actionName === 'increment' ? 1 : -1;
+      updateComparisonPosition(comparisonPosition + direction * 0.1);
+    },
+    [comparisonPosition, updateComparisonPosition],
+  );
+
+  const comparisonPanGesture = Gesture.Pan()
+    .onStart(() => {
+      'worklet';
+      compareDragStartPosition.value = comparisonPosition;
+    })
+    .onUpdate(({ translationX }) => {
+      'worklet';
+      if (viewportWidth <= 0) {
+        return;
+      }
+
+      runOnJS(updateComparisonPosition)(
+        compareDragStartPosition.value + translationX / viewportWidth,
+      );
+    });
+
   const toggleMuted = useCallback(() => {
     setMuted(!isMuted);
   }, [isMuted, setMuted]);
@@ -111,7 +173,10 @@ export default function VideoViewport({ height }: VideoViewportProps): React.JSX
   }, [requestedSeekTime, seek, seekRequestId]);
 
   return (
-    <View style={[styles.container, { height }]}>
+    <View
+      style={[styles.container, { height }]}
+      onLayout={handleViewportLayout}
+    >
       <GestureDetector gesture={composedGesture}>
         <View style={StyleSheet.absoluteFill}>
           {currentVideoUri ? (
@@ -127,6 +192,7 @@ export default function VideoViewport({ height }: VideoViewportProps): React.JSX
                 filterMatrix={filterMatrix}
                 filterMatrixPayload={filterMatrix.join(',')}
                 filterIntensity={filterIntensity}
+                comparisonPosition={comparisonPosition}
                 seekToTime={requestedSeekTime}
                 seekRequestId={seekRequestId}
                 onLoad={(event) => onLoad(event.nativeEvent.duration)}
@@ -155,17 +221,67 @@ export default function VideoViewport({ height }: VideoViewportProps): React.JSX
           {Platform.OS !== 'ios' && !isOriginal && overlayOpacity > 0 && (
             <View
               style={[
-                StyleSheet.absoluteFill,
-                {
-                  backgroundColor: dominantColor,
-                  opacity: overlayOpacity,
-                },
+                styles.androidComparisonOverlay,
+                androidComparisonOverlayStyle,
               ]}
               pointerEvents="none"
             />
           )}
         </View>
       </GestureDetector>
+
+      {showComparison && viewportWidth > 0 && (
+        <GestureDetector gesture={comparisonPanGesture}>
+          <View
+            style={[
+              styles.compareTouchTarget,
+              {
+                left: compareTouchLeft,
+                width: Math.min(COMPARE_TOUCH_WIDTH, viewportWidth),
+              },
+            ]}
+            accessibilityRole="adjustable"
+            accessibilityLabel="Compare original and filtered preview"
+            accessibilityValue={{
+              min: 0,
+              max: 100,
+              now: Math.round(comparisonPosition * 100),
+            }}
+            accessibilityActions={[
+              { name: 'decrement', label: 'Show more filtered preview' },
+              { name: 'increment', label: 'Show more original preview' },
+            ]}
+            onAccessibilityAction={handleComparisonAccessibilityAction}
+          >
+            <View
+              pointerEvents="none"
+              style={[
+                styles.compareLine,
+                {
+                  left:
+                    compareLineX -
+                    compareTouchLeft -
+                    COMPARE_LINE_WIDTH / 2,
+                },
+              ]}
+            />
+            <View
+              pointerEvents="none"
+              style={[
+                styles.compareHandle,
+                {
+                  left:
+                    compareLineX -
+                    compareTouchLeft -
+                    COMPARE_HANDLE_SIZE / 2,
+                },
+              ]}
+            >
+              <ChevronsLeftRight size={18} color={colors.black} />
+            </View>
+          </View>
+        </GestureDetector>
+      )}
 
       <AnimatedPressable onPress={toggleMuted} style={styles.muteButton}>
         {isMuted ? (
@@ -189,10 +305,52 @@ const createStyles = (theme: AppTheme) => ({
   placeholder: {
     backgroundColor: theme.colors.surface,
   },
+  androidComparisonOverlay: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+  },
+  compareTouchTarget: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    zIndex: 15,
+  },
+  compareLine: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    width: COMPARE_LINE_WIDTH,
+    borderRadius: COMPARE_LINE_WIDTH / 2,
+    backgroundColor: theme.colors.white,
+    shadowColor: theme.colors.black,
+    shadowOpacity: 0.36,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 4,
+  },
+  compareHandle: {
+    position: 'absolute',
+    top: '50%',
+    width: COMPARE_HANDLE_SIZE,
+    height: COMPARE_HANDLE_SIZE,
+    marginTop: -COMPARE_HANDLE_SIZE / 2,
+    borderRadius: COMPARE_HANDLE_SIZE / 2,
+    backgroundColor: theme.colors.white,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: theme.colors.black,
+    shadowOpacity: 0.26,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 6,
+  },
   muteButton: {
     position: 'absolute',
     top: 56,
     right: 16,
+    zIndex: 20,
     width: 40,
     height: 40,
     borderRadius: 20,
