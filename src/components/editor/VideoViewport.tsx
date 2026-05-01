@@ -169,6 +169,12 @@ export default function VideoViewport({
     setIsComparisonEnabled(nextEnabled);
   }, [comparisonEnabledValue, isComparisonEnabled]);
 
+  useEffect(() => {
+    comparisonEnabledValue.value = withTiming(showComparison ? 1 : 0, {
+      duration: COMPARE_SETTLE_DURATION_MS,
+    });
+  }, [comparisonEnabledValue, showComparison]);
+
   const comparisonPanGesture = Gesture.Pan()
     .onStart(() => {
       'worklet';

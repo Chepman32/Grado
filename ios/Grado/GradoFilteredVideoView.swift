@@ -101,6 +101,9 @@ final class GradoFilteredVideoView: UIView {
 
   private let player = AVPlayer()
   private let playerLayer = AVPlayerLayer()
+  private let originalPlayer = AVPlayer()
+  private let originalRevealLayer = CALayer()
+  private let originalPlayerLayer = AVPlayerLayer()
   private let filterStateLock = NSLock()
   private let ciContext: CIContext = {
     if let device = MTLCreateSystemDefaultDevice() {
@@ -141,11 +144,13 @@ final class GradoFilteredVideoView: UIView {
       player.removeTimeObserver(timeObserver)
     }
     player.replaceCurrentItem(with: nil)
+    originalPlayer.replaceCurrentItem(with: nil)
   }
 
   override func layoutSubviews() {
     super.layoutSubviews()
     playerLayer.frame = bounds
+    layoutOriginalRevealLayer()
   }
 
   private func commonInit() {
@@ -155,7 +160,16 @@ final class GradoFilteredVideoView: UIView {
     playerLayer.player = player
     layer.addSublayer(playerLayer)
 
+    originalRevealLayer.masksToBounds = true
+    originalRevealLayer.isHidden = true
+    originalPlayerLayer.player = originalPlayer
+    originalRevealLayer.addSublayer(originalPlayerLayer)
+    layer.addSublayer(originalRevealLayer)
+
     player.isMuted = muted
+    player.actionAtItemEnd = .none
+    originalPlayer.isMuted = true
+    originalPlayer.actionAtItemEnd = .none
     updateVideoGravity()
     updateFilterState()
     installTimeObserver()
@@ -171,7 +185,39 @@ final class GradoFilteredVideoView: UIView {
       let seconds = currentTime.seconds
       guard seconds.isFinite else { return }
       self.emitProgress(seconds)
+      self.syncOriginalPlayerIfNeeded()
     }
+  }
+
+  private func layoutOriginalRevealLayer() {
+    if !Thread.isMainThread {
+      DispatchQueue.main.async { [weak self] in
+        self?.layoutOriginalRevealLayer()
+      }
+      return
+    }
+
+    filterStateLock.lock()
+    let comparisonPosition = currentComparisonPosition
+    filterStateLock.unlock()
+    let revealWidth = bounds.width * comparisonPosition
+
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    originalRevealLayer.frame = CGRect(
+      x: 0,
+      y: 0,
+      width: revealWidth,
+      height: bounds.height
+    )
+    originalPlayerLayer.frame = CGRect(
+      x: 0,
+      y: 0,
+      width: bounds.width,
+      height: bounds.height
+    )
+    originalRevealLayer.isHidden = revealWidth <= 0.5
+    CATransaction.commit()
   }
 
   private func configureSource() {
@@ -180,35 +226,44 @@ final class GradoFilteredVideoView: UIView {
 
     guard let rawUri = sourceUri as String? else {
       player.replaceCurrentItem(with: nil)
+      originalPlayer.replaceCurrentItem(with: nil)
       return
     }
 
     let trimmedUri = rawUri.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmedUri.isEmpty else {
       player.replaceCurrentItem(with: nil)
+      originalPlayer.replaceCurrentItem(with: nil)
       return
     }
 
     sourceTask = Task { [weak self] in
       guard let self else { return }
-      guard let item = await self.preparePlayerItem(for: trimmedUri) else { return }
+      guard let items = await self.preparePlayerItems(for: trimmedUri) else { return }
       guard !Task.isCancelled else { return }
 
       await MainActor.run {
         guard self.sourceUri as String? == trimmedUri else { return }
-        self.attachPlayerItem(item)
+        self.attachPlayerItems(
+          filteredItem: items.filtered,
+          originalItem: items.original
+        )
       }
     }
   }
 
-  private func preparePlayerItem(for uri: String) async -> AVPlayerItem? {
+  private func preparePlayerItems(
+    for uri: String
+  ) async -> (filtered: AVPlayerItem, original: AVPlayerItem)? {
     guard let asset = await loadAsset(from: uri) else {
       return nil
     }
 
-    let item = AVPlayerItem(asset: asset)
-    item.videoComposition = makeVideoComposition(for: asset)
-    return item
+    let filteredItem = AVPlayerItem(asset: asset)
+    filteredItem.videoComposition = makeVideoComposition(for: asset)
+    let originalItem = AVPlayerItem(asset: asset)
+
+    return (filtered: filteredItem, original: originalItem)
   }
 
   private func loadAsset(from uri: String) async -> AVAsset? {
@@ -262,7 +317,7 @@ final class GradoFilteredVideoView: UIView {
 
   private func makeVideoComposition(for asset: AVAsset) -> AVVideoComposition {
     makeVideoComposition(for: asset) { [weak self] in
-      self?.snapshotFilterState()
+      self?.snapshotFilteredLayerState()
     }
   }
 
@@ -1565,7 +1620,7 @@ final class GradoFilteredVideoView: UIView {
     currentComparisonPosition = nextComparisonPosition
     filterStateLock.unlock()
 
-    refreshCurrentFrameIfPaused()
+    layoutOriginalRevealLayer()
   }
 
   private func parseFilterMatrixPayload(_ rawPayload: String) -> [CGFloat]? {
@@ -1597,6 +1652,20 @@ final class GradoFilteredVideoView: UIView {
       matrix: matrix,
       intensity: intensity,
       comparisonPosition: comparisonPosition
+    )
+  }
+
+  private func snapshotFilteredLayerState() -> VideoRenderState {
+    filterStateLock.lock()
+    let filterId = currentFilterId
+    let matrix = currentMatrix
+    let intensity = currentIntensity
+    filterStateLock.unlock()
+    return VideoRenderState(
+      filterId: filterId,
+      matrix: matrix,
+      intensity: intensity,
+      comparisonPosition: 0
     )
   }
 
@@ -1639,11 +1708,37 @@ final class GradoFilteredVideoView: UIView {
     refreshCurrentFrameIfPaused()
   }
 
+  private func syncOriginalPlayer(to time: CMTime, tolerance: CMTime = .zero) {
+    guard originalPlayer.currentItem != nil else { return }
+
+    originalPlayer.seek(
+      to: time,
+      toleranceBefore: tolerance,
+      toleranceAfter: tolerance
+    )
+  }
+
+  private func syncOriginalPlayerIfNeeded(tolerance seconds: Double = 0.04) {
+    guard originalPlayer.currentItem != nil else { return }
+
+    let filteredTime = player.currentTime().seconds
+    let originalTime = originalPlayer.currentTime().seconds
+    guard filteredTime.isFinite, originalTime.isFinite else { return }
+    guard abs(filteredTime - originalTime) > seconds else { return }
+
+    syncOriginalPlayer(
+      to: player.currentTime(),
+      tolerance: CMTime(seconds: seconds / 2, preferredTimescale: 600)
+    )
+  }
+
   private func seekIfNeeded() {
     let seconds = max(0, Double(truncating: seekToTime))
     let targetTime = CMTime(seconds: seconds, preferredTimescale: 600)
 
     guard player.currentItem != nil else { return }
+
+    syncOriginalPlayer(to: targetTime)
 
     player.seek(
       to: targetTime,
@@ -1674,6 +1769,7 @@ final class GradoFilteredVideoView: UIView {
 
     isRefreshingCurrentFrame = true
     let currentTime = player.currentTime()
+    syncOriginalPlayer(to: currentTime)
 
     player.seek(
       to: currentTime,
@@ -1691,10 +1787,15 @@ final class GradoFilteredVideoView: UIView {
     }
   }
 
-  private func attachPlayerItem(_ item: AVPlayerItem) {
+  private func attachPlayerItems(
+    filteredItem: AVPlayerItem,
+    originalItem: AVPlayerItem
+  ) {
     tearDownCurrentItemObservers()
-    player.replaceCurrentItem(with: item)
-    observeCurrentItem(item)
+    player.replaceCurrentItem(with: filteredItem)
+    originalPlayer.replaceCurrentItem(with: originalItem)
+    syncOriginalPlayer(to: player.currentTime())
+    observeCurrentItem(filteredItem)
     updatePlaybackState()
   }
 
@@ -1738,10 +1839,13 @@ final class GradoFilteredVideoView: UIView {
 
   private func handlePlaybackEnded() {
     if repeatVideo {
+      originalPlayer.seek(to: .zero)
       player.seek(to: .zero) { [weak self] _ in
         guard let self else { return }
+        self.syncOriginalPlayer(to: .zero)
         self.refreshCurrentFrameIfPaused()
         if !self.paused {
+          self.originalPlayer.play()
           self.player.play()
         }
       }
@@ -1749,8 +1853,11 @@ final class GradoFilteredVideoView: UIView {
     }
 
     player.pause()
+    originalPlayer.pause()
+    originalPlayer.seek(to: .zero)
     player.seek(to: .zero) { [weak self] _ in
       guard let self else { return }
+      self.syncOriginalPlayer(to: .zero)
       self.refreshCurrentFrameIfPaused()
       self.emitProgress(0)
       self.emitEnd()
@@ -1762,8 +1869,11 @@ final class GradoFilteredVideoView: UIView {
 
     if paused {
       player.pause()
+      originalPlayer.pause()
       refreshCurrentFrameIfPaused()
     } else {
+      syncOriginalPlayerIfNeeded(tolerance: 0.02)
+      originalPlayer.play()
       player.play()
     }
   }
@@ -1772,10 +1882,13 @@ final class GradoFilteredVideoView: UIView {
     switch resizeMode as String {
     case "contain":
       playerLayer.videoGravity = .resizeAspect
+      originalPlayerLayer.videoGravity = .resizeAspect
     case "stretch":
       playerLayer.videoGravity = .resize
+      originalPlayerLayer.videoGravity = .resize
     default:
       playerLayer.videoGravity = .resizeAspectFill
+      originalPlayerLayer.videoGravity = .resizeAspectFill
     }
   }
 
