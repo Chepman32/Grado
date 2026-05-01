@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import {
   ScrollView,
   StyleSheet,
@@ -35,13 +35,14 @@ import {
   type AppThemeId,
 } from '../theme';
 import { useTranslation } from '../i18n/useTranslation';
-import type { LanguageCode, TranslationKeys } from '../i18n/translations';
+import type { TranslationKeys } from '../i18n/translations';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Settings'>;
 
 interface AccordionProps {
   title: string;
   children: React.ReactNode;
+  onExpand?: () => void;
 }
 
 const EXPORT_FORMAT_OPTIONS: Array<{ id: ExportFormatId; labelKey: keyof TranslationKeys }> = [
@@ -72,7 +73,7 @@ const ACCORDION_TIMING = {
   easing: Easing.out(Easing.cubic),
 };
 
-function Accordion({ title, children }: AccordionProps) {
+function Accordion({ title, children, onExpand }: AccordionProps) {
   const theme = useAppTheme();
   const styles = useThemedStyles(createStyles);
   const [expanded, setExpanded] = useState(false);
@@ -82,7 +83,10 @@ function Accordion({ title, children }: AccordionProps) {
     const next = !expanded;
     setExpanded(next);
     progress.value = withTiming(next ? 1 : 0, ACCORDION_TIMING);
-  }, [expanded, progress]);
+    if (next) {
+      setTimeout(() => onExpand?.(), ACCORDION_TIMING.duration);
+    }
+  }, [expanded, onExpand, progress]);
 
   const contentStyle = useAnimatedStyle(() => ({
     maxHeight: progress.value * ACCORDION_CONTENT_HEIGHT,
@@ -120,6 +124,9 @@ export default function SettingsScreen(_props: Props): React.JSX.Element {
   const setPreviewMode = useSettingsStore((state) => state.setPreviewMode);
   const language = useSettingsStore((state) => state.language);
   const setLanguage = useSettingsStore((state) => state.setLanguage);
+  const languageScrollRef = useRef<ScrollView>(null);
+  const languageOptionOffsets = useRef<Record<string, number>>({});
+  const selectedLanguageKey = language ?? 'system';
 
   const THEME_COPY: Record<AppThemeId, string> = {
     dark: t.themeDark,
@@ -132,6 +139,16 @@ export default function SettingsScreen(_props: Props): React.JSX.Element {
     mp4: t.exportMp4Desc,
     hevc: t.exportHevcDesc,
   };
+
+  const scrollToSelectedLanguage = useCallback(() => {
+    requestAnimationFrame(() => {
+      const selectedOffset = languageOptionOffsets.current[selectedLanguageKey] ?? 0;
+      languageScrollRef.current?.scrollTo({
+        y: Math.max(selectedOffset - spacing.sm, 0),
+        animated: true,
+      });
+    });
+  }, [selectedLanguageKey]);
 
   return (
     <ScrollView
@@ -282,8 +299,14 @@ export default function SettingsScreen(_props: Props): React.JSX.Element {
         </View>
       </Accordion>
 
-      <Accordion title={t.language}>
-        <View style={styles.optionList}>
+      <Accordion title={t.language} onExpand={scrollToSelectedLanguage}>
+        <ScrollView
+          ref={languageScrollRef}
+          style={styles.languageList}
+          contentContainerStyle={styles.optionList}
+          nestedScrollEnabled
+          showsVerticalScrollIndicator
+        >
           <AnimatedPressable
             onPress={() => setLanguage(null)}
             style={[
@@ -292,6 +315,9 @@ export default function SettingsScreen(_props: Props): React.JSX.Element {
             ]}
             accessibilityLabel={`Select ${t.systemDefault}`}
             accessibilityRole="button"
+            onLayout={(event) => {
+              languageOptionOffsets.current.system = event.nativeEvent.layout.y;
+            }}
           >
             <View style={styles.optionHeaderRow}>
               <View style={styles.optionTextWrap}>
@@ -322,6 +348,9 @@ export default function SettingsScreen(_props: Props): React.JSX.Element {
                 ]}
                 accessibilityLabel={`Select ${LANGUAGE_LABELS[code]}`}
                 accessibilityRole="button"
+                onLayout={(event) => {
+                  languageOptionOffsets.current[code] = event.nativeEvent.layout.y;
+                }}
               >
                 <View style={styles.optionHeaderRow}>
                   <View style={styles.optionTextWrap}>
@@ -341,7 +370,7 @@ export default function SettingsScreen(_props: Props): React.JSX.Element {
               </AnimatedPressable>
             );
           })}
-        </View>
+        </ScrollView>
       </Accordion>
 
       <Accordion title={t.about}>
@@ -452,6 +481,9 @@ const createStyles = (theme: AppTheme) => {
       paddingHorizontal: spacing.md,
       paddingBottom: spacing.md,
       gap: spacing.sm,
+    },
+    languageList: {
+      maxHeight: ACCORDION_CONTENT_HEIGHT,
     },
     optionCard: {
       borderRadius: 16,
