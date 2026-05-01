@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect } from 'react';
 import { Text, View } from 'react-native';
-import { Canvas, RoundedRect } from '@shopify/react-native-skia';
+import { BlurMask, Canvas, Circle, RoundedRect } from '@shopify/react-native-skia';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   useSharedValue,
@@ -26,6 +26,9 @@ import { SPRING_BOUNCY, SPRING_GENTLE } from '../../theme/animations';
 // ---------------------------------------------------------------------------
 const TRACK_HEIGHT = 6;
 const TRACK_RADIUS = 3;
+const THUMB_RADIUS = 9;
+const THUMB_SHADOW_RADIUS = 10;
+const CANVAS_HEIGHT = THUMB_SHADOW_RADIUS * 3;
 const SLIDER_PADDING_H = spacing.xl; // left + right padding inside the container
 const RUBBER_BAND = 0.25;
 
@@ -67,7 +70,11 @@ export default function IntensitySlider({
   const activeFilter = getFilterById(activeFilterId);
   const trackColor = activeFilter?.dominantColor ?? colors.textSecondary;
 
-  const trackWidth = containerWidth - SLIDER_PADDING_H * 2;
+  const canvasWidth = Math.max(containerWidth - SLIDER_PADDING_H * 2, 0);
+  const trackWidth = Math.max(canvasWidth - THUMB_RADIUS * 2, 0);
+  const trackX = THUMB_RADIUS;
+  const trackY = (CANVAS_HEIGHT - TRACK_HEIGHT) / 2;
+  const thumbCenterY = CANVAS_HEIGHT / 2;
 
   // Shared value for the fill width in pixels.
   const fillWidth = useSharedValue(filterIntensity * trackWidth);
@@ -154,6 +161,10 @@ export default function IntensitySlider({
   const clampedFillWidth = useDerivedValue(() =>
     clamp(fillWidth.value, 0, trackWidth > 0 ? trackWidth : 0),
   );
+  const thumbCenterX = useDerivedValue(() => trackX + clampedFillWidth.value);
+  const thumbShadowColor = theme.isDark
+    ? 'rgba(0,0,0,0.42)'
+    : 'rgba(18,23,34,0.24)';
 
   return (
     <Animated.View
@@ -163,11 +174,11 @@ export default function IntensitySlider({
       <GestureDetector gesture={panGesture}>
         <View style={[styles.sliderRow, { paddingHorizontal: SLIDER_PADDING_H }]}>
           {trackWidth > 0 ? (
-            <Canvas style={{ width: trackWidth, height: TRACK_HEIGHT * 3 }}>
+            <Canvas style={{ width: canvasWidth, height: CANVAS_HEIGHT }}>
               {/* Background track */}
               <RoundedRect
-                x={0}
-                y={TRACK_HEIGHT}
+                x={trackX}
+                y={trackY}
                 width={trackWidth}
                 height={TRACK_HEIGHT}
                 r={TRACK_RADIUS}
@@ -175,12 +186,26 @@ export default function IntensitySlider({
               />
               {/* Fill track */}
               <RoundedRect
-                x={0}
-                y={TRACK_HEIGHT}
+                x={trackX}
+                y={trackY}
                 width={clampedFillWidth}
                 height={TRACK_HEIGHT}
                 r={TRACK_RADIUS}
                 color={trackColor}
+              />
+              <Circle
+                cx={thumbCenterX}
+                cy={thumbCenterY}
+                r={THUMB_SHADOW_RADIUS}
+                color={thumbShadowColor}
+              >
+                <BlurMask blur={3} style="normal" />
+              </Circle>
+              <Circle
+                cx={thumbCenterX}
+                cy={thumbCenterY}
+                r={THUMB_RADIUS}
+                color={colors.white}
               />
             </Canvas>
           ) : (
@@ -207,7 +232,7 @@ const createStyles = (theme: AppTheme) => ({
     alignItems: 'center',
   },
   trackPlaceholder: {
-    height: TRACK_HEIGHT * 3,
+    height: CANVAS_HEIGHT,
     width: '100%',
   },
   percentLabel: {
